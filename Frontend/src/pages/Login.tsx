@@ -41,14 +41,14 @@ const Login = () => {
           <h1 className="text-4xl font-bold text-gradient">Guardián de Gastos</h1>
           <p className="text-muted-foreground mt-2">Tu economía familiar, en armonía.</p>
         </div>
-        <form onSubmit={submit} className="glass-strong rounded-3xl p-8 space-y-5">
+        <form onSubmit={submit} className="glass-strong rounded-3xl p-8 space-y-5" autoComplete="off">
           <div className="space-y-2">
             <Label>Correo familiar</Label>
-            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="familia@correo.com" />
+            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="familia@correo.com" autoComplete="off" />
           </div>
           <div className="space-y-2">
             <Label>Contraseña</Label>
-            <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
           </div>
           <Button type="submit" className="w-full bg-gradient-primary text-white shadow-glow h-11 text-base mb-2">
             Iniciar sesión
