@@ -21,15 +21,7 @@ const Login = () => {
     navigate("/dashboard");
   };
 
-  const fillDemoAdmin = () => {
-    setEmail("admin@admin.com");
-    setPassword("admin1234");
-  };
 
-  const fillDemoGuardian = () => {
-    setEmail("demo@guardian.com");
-    setPassword("demo123");
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -53,14 +45,7 @@ const Login = () => {
           <Button type="submit" className="w-full bg-gradient-primary text-white shadow-glow h-11 text-base mb-2">
             Iniciar sesión
           </Button>
-          <div className="flex flex-col gap-2 mt-4">
-            <Button type="button" variant="outline" onClick={fillDemoAdmin} className="w-full glass">
-              Usar cuenta demo (admin / admin)
-            </Button>
-            <Button type="button" variant="outline" onClick={fillDemoGuardian} className="w-full glass">
-              Usar cuenta de prueba (demo@guardian.com)
-            </Button>
-          </div>
+
           <p className="text-center text-sm text-muted-foreground pt-2">
             ¿Aún no tienen cuenta?{" "}
             <Link to="/signup" className="text-primary font-semibold hover:underline">
