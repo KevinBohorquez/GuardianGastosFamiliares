@@ -18,7 +18,7 @@ const Login = () => {
     const r = await login(email, password);
     if (!r.ok) return toast.error(r.error);
     toast.success("¡Bienvenidos de vuelta!");
-    navigate("/profiles");
+    navigate("/dashboard");
   };
 
   const fillDemoAdmin = () => {

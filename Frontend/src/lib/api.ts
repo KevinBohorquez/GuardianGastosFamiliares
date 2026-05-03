@@ -1,4 +1,4 @@
-import { Family, Member, Expense, Category } from "@/types";
+import { Profile, Family, FamilyMember, Expense, Category, Notification } from "@/types";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 const TOKEN_KEY = "gg_token";
@@ -33,10 +33,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 // ── Auth ────────────────────────────────────────────────
-export const apiSignup = (familyName: string, email: string, password: string) =>
+export const apiSignup = (name: string, email: string, password: string) =>
   request<{ accessToken: string; refreshToken: string; user: { id: string; email: string } }>(
     "/api/auth/signup",
-    { method: "POST", body: JSON.stringify({ familyName, email, password }) }
+    { method: "POST", body: JSON.stringify({ name, email, password }) }
   );
 
 export const apiLogin = (email: string, password: string) =>
@@ -45,31 +45,29 @@ export const apiLogin = (email: string, password: string) =>
     { method: "POST", body: JSON.stringify({ email, password }) }
   );
 
+// ── Profile ─────────────────────────────────────────────
+export const apiGetProfile = () => request<Profile>("/api/profile/me");
+
+export const apiUpdateProfile = (data: Partial<{ name: string; monthlyIncome: number; expenseRatioThreshold: number; color: string }>) =>
+  request<Profile>("/api/profile/me", { method: "PATCH", body: JSON.stringify(data) });
+
 // ── Family ──────────────────────────────────────────────
 export const apiGetFamily = () =>
-  request<{ id: string; familyName: string; email: string; createdAt: string }>(
-    "/api/family/me"
-  ).then<Family>((f) => ({
-    id: f.id,
-    email: f.email,
-    password: "",
-    familyName: f.familyName,
-    createdAt: f.createdAt,
-  }));
+  request<Family | null>("/api/family/me");
 
-// ── Members ─────────────────────────────────────────────
-export const apiListMembers = () => request<Member[]>("/api/members");
+export const apiCreateFamily = (familyName: string) =>
+  request<Family>("/api/family", { method: "POST", body: JSON.stringify({ familyName }) });
 
-export const apiCreateMember = (data: { name: string; monthlyIncome: number; color: string }) =>
-  request<Member>("/api/members", { method: "POST", body: JSON.stringify(data) });
+export const apiListFamilyMembers = () => request<FamilyMember[]>("/api/family/members");
 
-export const apiUpdateMember = (
-  id: string,
-  data: Partial<{ name: string; monthlyIncome: number }>
-) => request<Member>(`/api/members/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+export const apiInviteMember = (email: string) =>
+  request<{ ok: true; invite: any }>("/api/family/invite", { method: "POST", body: JSON.stringify({ email }) });
 
-export const apiDeleteMember = (id: string) =>
-  request<{ ok: true }>(`/api/members/${id}`, { method: "DELETE" });
+export const apiAcceptInvite = (id: string) =>
+  request<{ ok: true }>(`/api/family/invite/${id}/accept`, { method: "PATCH" });
+
+export const apiRemoveMemberOrRejectInvite = (id: string) =>
+  request<{ ok: true }>(`/api/family/invite/${id}`, { method: "DELETE" });
 
 // ── Expenses ────────────────────────────────────────────
 export const apiListExpenses = () => request<Expense[]>("/api/expenses");
@@ -77,7 +75,7 @@ export const apiListExpenses = () => request<Expense[]>("/api/expenses");
 export const apiGetPaginatedExpenses = (params: {
   page: number;
   limit: number;
-  memberId?: string;
+  userId?: string;
   category?: string;
   from?: string;
   to?: string;
@@ -85,7 +83,7 @@ export const apiGetPaginatedExpenses = (params: {
   const query = new URLSearchParams();
   query.append("page", params.page.toString());
   query.append("limit", params.limit.toString());
-  if (params.memberId) query.append("memberId", params.memberId);
+  if (params.userId) query.append("userId", params.userId);
   if (params.category) query.append("category", params.category);
   if (params.from) query.append("from", params.from);
   if (params.to) query.append("to", params.to);
@@ -94,13 +92,13 @@ export const apiGetPaginatedExpenses = (params: {
 };
 
 export const apiExportExpenses = (params: {
-  memberId?: string;
+  userId?: string;
   category?: string;
   from?: string;
   to?: string;
 }) => {
   const query = new URLSearchParams();
-  if (params.memberId) query.append("memberId", params.memberId);
+  if (params.userId) query.append("userId", params.userId);
   if (params.category) query.append("category", params.category);
   if (params.from) query.append("from", params.from);
   if (params.to) query.append("to", params.to);
@@ -109,7 +107,6 @@ export const apiExportExpenses = (params: {
 };
 
 export const apiCreateExpense = (data: {
-  memberId: string;
   description: string;
   amount: number;
   date: string;
@@ -123,3 +120,8 @@ export const apiUpdateExpense = (
 
 export const apiDeleteExpense = (id: string) =>
   request<{ ok: true }>(`/api/expenses/${id}`, { method: "DELETE" });
+
+// ── Notifications ───────────────────────────────────────
+export const apiListNotifications = () => request<Notification[]>("/api/notifications");
+
+export const apiReadNotification = (id: string) => request<{ ok: true }>(`/api/notifications/${id}/read`, { method: "PATCH" });

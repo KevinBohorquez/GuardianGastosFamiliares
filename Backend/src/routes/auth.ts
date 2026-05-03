@@ -7,7 +7,7 @@ export const authRouter = Router();
 const SignupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
-  familyName: z.string().min(1).max(80),
+  name: z.string().min(1).max(80),
 });
 
 authRouter.post("/signup", async (req, res) => {
@@ -15,30 +15,16 @@ authRouter.post("/signup", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
   }
-  const { email, password, familyName } = parsed.data;
+  const { email, password, name } = parsed.data;
 
   // Crea el usuario y confirma el email automáticamente para que pueda loguearse al instante.
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { family_name: familyName },
+    user_metadata: { name },
   });
   if (error) return res.status(400).json({ error: error.message });
-
-  // El trigger `handle_new_user` debería crear la familia. Verificamos.
-  const { data: fam } = await supabaseAdmin
-    .from("families")
-    .select("id")
-    .eq("user_id", data.user!.id)
-    .maybeSingle();
-
-  if (!fam) {
-    // Fallback si el trigger no está instalado
-    await supabaseAdmin
-      .from("families")
-      .insert({ user_id: data.user!.id, family_name: familyName });
-  }
 
   // Login inmediato para devolver el token
   const { data: session, error: loginErr } =

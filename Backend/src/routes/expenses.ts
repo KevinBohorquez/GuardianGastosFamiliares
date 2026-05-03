@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, AuthedRequest } from "../middleware/auth.js";
-import { supabaseAdmin } from "../supabase.js";
 
 export const expensesRouter = Router();
 expensesRouter.use(requireAuth);
@@ -17,8 +16,7 @@ const CATEGORIES = [
 
 const mapRow = (r: any) => ({
   id: r.id,
-  familyId: r.family_id,
-  memberId: r.member_id,
+  userId: r.user_id,
   description: r.description,
   amount: Number(r.amount),
   date: r.date,
@@ -27,10 +25,11 @@ const mapRow = (r: any) => ({
 });
 
 expensesRouter.get("/", async (req: AuthedRequest, res) => {
-  const { data, error } = await supabaseAdmin
+  // Gracias a RLS, req.supabase solo devolverá los gastos a los que el usuario tiene acceso
+  // (los suyos, y los de los miembros aceptados si es líder)
+  const { data, error } = await req.supabase!
     .from("expenses")
     .select("*")
-    .eq("family_id", req.familyId!)
     .order("date", { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json(data.map(mapRow));
@@ -39,17 +38,16 @@ expensesRouter.get("/", async (req: AuthedRequest, res) => {
 expensesRouter.get("/paginated", async (req: AuthedRequest, res) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 15;
-  const memberId = req.query.memberId as string;
+  const userId = req.query.userId as string;
   const category = req.query.category as string;
   const fromDate = req.query.from as string;
   const toDate = req.query.to as string;
 
-  let query = supabaseAdmin
+  let query = req.supabase!
     .from("expenses")
-    .select("*", { count: "exact" })
-    .eq("family_id", req.familyId!);
+    .select("*", { count: "exact" });
 
-  if (memberId && memberId !== "all") query = query.eq("member_id", memberId);
+  if (userId && userId !== "all") query = query.eq("user_id", userId);
   if (category && category !== "all") query = query.eq("category", category);
   if (fromDate) query = query.gte("date", fromDate);
   if (toDate) query = query.lte("date", toDate + " 23:59:59");
@@ -66,17 +64,16 @@ expensesRouter.get("/paginated", async (req: AuthedRequest, res) => {
 });
 
 expensesRouter.get("/export", async (req: AuthedRequest, res) => {
-  const memberId = req.query.memberId as string;
+  const userId = req.query.userId as string;
   const category = req.query.category as string;
   const fromDate = req.query.from as string;
   const toDate = req.query.to as string;
 
-  let query = supabaseAdmin
+  let query = req.supabase!
     .from("expenses")
-    .select("*")
-    .eq("family_id", req.familyId!);
+    .select("*");
 
-  if (memberId && memberId !== "all") query = query.eq("member_id", memberId);
+  if (userId && userId !== "all") query = query.eq("user_id", userId);
   if (category && category !== "all") query = query.eq("category", category);
   if (fromDate) query = query.gte("date", fromDate);
   if (toDate) query = query.lte("date", toDate + " 23:59:59");
@@ -88,7 +85,6 @@ expensesRouter.get("/export", async (req: AuthedRequest, res) => {
 });
 
 const CreateSchema = z.object({
-  memberId: z.string().uuid(),
   description: z.string().min(1).max(120),
   amount: z.number().positive(),
   date: z.string().min(8),
@@ -99,20 +95,11 @@ expensesRouter.post("/", async (req: AuthedRequest, res) => {
   const p = CreateSchema.safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: p.error.flatten().fieldErrors });
 
-  // Verifica que el member pertenezca a la familia
-  const { data: m } = await supabaseAdmin
-    .from("members")
-    .select("id")
-    .eq("id", p.data.memberId)
-    .eq("family_id", req.familyId!)
-    .maybeSingle();
-  if (!m) return res.status(403).json({ error: "Miembro no pertenece a la familia" });
-
-  const { data, error } = await supabaseAdmin
+  // Por RLS, un usuario solo puede insertar gastos para sí mismo (user_id = auth.uid())
+  const { data, error } = await req.supabase!
     .from("expenses")
     .insert({
-      family_id: req.familyId!,
-      member_id: p.data.memberId,
+      user_id: req.user!.id,
       description: p.data.description,
       amount: p.data.amount,
       date: p.data.date.slice(0, 10),
@@ -120,6 +107,7 @@ expensesRouter.post("/", async (req: AuthedRequest, res) => {
     })
     .select("*")
     .single();
+  
   if (error) return res.status(500).json({ error: error.message });
   res.status(201).json(mapRow(data));
 });
@@ -137,23 +125,23 @@ expensesRouter.patch("/:id", async (req: AuthedRequest, res) => {
   const patch: Record<string, unknown> = { ...p.data };
   if (typeof patch.date === "string") patch.date = (patch.date as string).slice(0, 10);
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await req.supabase!
     .from("expenses")
     .update(patch)
     .eq("id", req.params.id)
-    .eq("family_id", req.familyId!)
     .select("*")
     .single();
+    
   if (error) return res.status(500).json({ error: error.message });
   res.json(mapRow(data));
 });
 
 expensesRouter.delete("/:id", async (req: AuthedRequest, res) => {
-  const { error } = await supabaseAdmin
+  const { error } = await req.supabase!
     .from("expenses")
     .delete()
-    .eq("id", req.params.id)
-    .eq("family_id", req.familyId!);
+    .eq("id", req.params.id);
+  
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });

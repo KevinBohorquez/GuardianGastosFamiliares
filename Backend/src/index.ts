@@ -3,8 +3,9 @@ import express from "express";
 import cors from "cors";
 import { authRouter } from "./routes/auth.js";
 import { familyRouter } from "./routes/family.js";
-import { membersRouter } from "./routes/members.js";
 import { expensesRouter } from "./routes/expenses.js";
+import { profileRouter } from "./routes/profile.js";
+import { notificationsRouter } from "./routes/notifications.js";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
@@ -17,8 +18,9 @@ app.get("/health", (_req, res) => res.json({ ok: true, service: "guardian-backen
 
 app.use("/api/auth", authRouter);
 app.use("/api/family", familyRouter);
-app.use("/api/members", membersRouter);
 app.use("/api/expenses", expensesRouter);
+app.use("/api/profile", profileRouter);
+app.use("/api/notifications", notificationsRouter);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[error]", err);

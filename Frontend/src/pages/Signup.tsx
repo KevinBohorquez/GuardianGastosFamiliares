@@ -10,17 +10,17 @@ import { Wallet } from "lucide-react";
 const Signup = () => {
   const { signup } = useApp();
   const navigate = useNavigate();
-  const [familyName, setFamilyName] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password.length < 6) return toast.error("La contraseña debe tener al menos 6 caracteres.");
-    const r = await signup(familyName.trim(), email.trim(), password);
+    const r = await signup(name.trim(), email.trim(), password);
     if (!r.ok) return toast.error(r.error);
-    toast.success("¡Familia registrada!");
-    navigate("/profiles");
+    toast.success("¡Cuenta registrada exitosamente!");
+    navigate("/dashboard");
   };
 
   return (
@@ -30,17 +30,17 @@ const Signup = () => {
           <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-hero shadow-glow mb-4">
             <Wallet className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-gradient">Crea tu cuenta familiar</h1>
-          <p className="text-muted-foreground mt-2">Una sola cuenta. Todos los miembros.</p>
+          <h1 className="text-4xl font-bold text-gradient">Crea tu cuenta</h1>
+          <p className="text-muted-foreground mt-2">Tu identidad financiera, privada y segura.</p>
         </div>
         <form onSubmit={submit} className="glass-strong rounded-3xl p-8 space-y-5">
           <div className="space-y-2">
-            <Label>Nombre de la familia</Label>
-            <Input required value={familyName} onChange={(e) => setFamilyName(e.target.value)} placeholder="Pérez García" maxLength={50} />
+            <Label>Tu nombre</Label>
+            <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Juan Pérez" maxLength={50} />
           </div>
           <div className="space-y-2">
-            <Label>Correo familiar</Label>
-            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Label>Correo electrónico</Label>
+            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="juan@correo.com" />
           </div>
           <div className="space-y-2">
             <Label>Contraseña</Label>
@@ -50,9 +50,9 @@ const Signup = () => {
             Crear cuenta
           </Button>
           <p className="text-center text-sm text-muted-foreground">
-            ¿Ya tienen cuenta?{" "}
+            ¿Ya tienes cuenta?{" "}
             <Link to="/login" className="text-primary font-semibold hover:underline">
-              Inicien sesión
+              Inicia sesión
             </Link>
           </p>
         </form>

@@ -24,31 +24,48 @@ export const CATEGORY_COLORS: Record<Category, string> = {
   "Otros": "hsl(270 85% 60%)",
 };
 
-export interface Family {
+export interface Profile {
   id: string;
-  email: string;
-  password: string; // demo only — hashed in real backend
-  familyName: string;
-  createdAt: string;
-}
-
-export interface Member {
-  id: string;
-  familyId: string;
   name: string;
   monthlyIncome: number;
+  expenseRatioThreshold: number;
   color: string;
+}
+
+export interface Family {
+  id: string;
+  leader_id: string;
+  family_name: string;
+  created_at: string;
+  role: "leader" | "member";
+}
+
+export interface FamilyMember {
+  id: string;
+  userId: string;
+  status: "pending" | "accepted" | "rejected";
   createdAt: string;
+  name?: string;
+  color?: string;
+  monthlyIncome?: number;
 }
 
 export interface Expense {
   id: string;
-  memberId: string;
-  familyId: string;
+  userId: string;
   description: string;
   amount: number;
   date: string; // ISO
   category: Category;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  type: "expense_alert" | "family_invite";
+  message: string;
+  relatedEntityId?: string;
+  isRead: boolean;
   createdAt: string;
 }
 

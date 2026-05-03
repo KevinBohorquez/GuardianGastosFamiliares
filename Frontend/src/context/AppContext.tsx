@@ -1,42 +1,61 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { Family, Member, Expense, AVATAR_COLORS } from "@/types";
+import { Profile, Family, FamilyMember, Expense, Notification } from "@/types";
 import * as api from "@/lib/api";
 
-const ACTIVE_KEY = "gg_active_member";
-
 interface Ctx {
+  profile: Profile | null;
   family: Family | null;
-  members: Member[];
+  familyMembers: FamilyMember[];
   expenses: Expense[];
-  activeMember: Member | null;
+  notifications: Notification[];
   loading: boolean;
-  signup: (familyName: string, email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signup: (name: string, email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
-  addMember: (name: string, monthlyIncome: number) => Promise<void>;
-  updateMember: (id: string, data: Partial<Pick<Member, "name" | "monthlyIncome">>) => Promise<void>;
-  deleteMember: (id: string) => Promise<void>;
-  selectMember: (id: string | null) => void;
-  addExpense: (e: Omit<Expense, "id" | "memberId" | "familyId" | "createdAt">) => Promise<void>;
-  updateExpense: (id: string, data: Partial<Omit<Expense, "id" | "memberId" | "familyId" | "createdAt">>) => Promise<void>;
+  updateProfile: (data: Partial<Pick<Profile, "name" | "monthlyIncome" | "expenseRatioThreshold" | "color">>) => Promise<void>;
+  createFamily: (familyName: string) => Promise<void>;
+  inviteMember: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  acceptInvite: (id: string) => Promise<void>;
+  rejectOrRemoveMember: (id: string) => Promise<void>;
+  addExpense: (e: Omit<Expense, "id" | "userId" | "createdAt">) => Promise<void>;
+  updateExpense: (id: string, data: Partial<Omit<Expense, "id" | "userId" | "createdAt">>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
+  readNotification: (id: string) => Promise<void>;
+  refreshAll: () => Promise<void>;
 }
 
 const AppCtx = createContext<Ctx | null>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [family, setFamily] = useState<Family | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [activeMemberId, setActiveMemberId] = useState<string | null>(
-    () => localStorage.getItem(ACTIVE_KEY)
-  );
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refreshAll = useCallback(async () => {
-    const [m, e] = await Promise.all([api.apiListMembers(), api.apiListExpenses()]);
-    setMembers(m);
-    setExpenses(e);
+    try {
+      const [p, f, e, n] = await Promise.all([
+        api.apiGetProfile(),
+        api.apiGetFamily(),
+        api.apiListExpenses(),
+        api.apiListNotifications(),
+      ]);
+      setProfile(p);
+      setFamily(f);
+      setExpenses(e);
+      setNotifications(n);
+
+      if (f) {
+        const fm = await api.apiListFamilyMembers();
+        setFamilyMembers(fm);
+      } else {
+        setFamilyMembers([]);
+      }
+    } catch (err) {
+      console.error("Error refreshing data", err);
+    }
   }, []);
 
   // Hydrate desde token guardado
@@ -48,8 +67,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
       try {
-        const fam = await api.apiGetFamily();
-        setFamily(fam);
         await refreshAll();
       } catch {
         api.setToken(null);
@@ -59,14 +76,10 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     })();
   }, [refreshAll]);
 
-  const activeMember = members.find((m) => m.id === activeMemberId) || null;
-
-  const signup: Ctx["signup"] = async (familyName, email, password) => {
+  const signup: Ctx["signup"] = async (name, email, password) => {
     try {
-      const res = await api.apiSignup(familyName, email, password);
+      const res = await api.apiSignup(name, email, password);
       api.setToken(res.accessToken);
-      const fam = await api.apiGetFamily();
-      setFamily(fam);
       await refreshAll();
       return { ok: true };
     } catch (e: any) {
@@ -78,8 +91,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const res = await api.apiLogin(email, password);
       api.setToken(res.accessToken);
-      const fam = await api.apiGetFamily();
-      setFamily(fam);
       await refreshAll();
       return { ok: true };
     } catch (e: any) {
@@ -89,44 +100,58 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = () => {
     api.setToken(null);
-    localStorage.removeItem(ACTIVE_KEY);
+    setProfile(null);
     setFamily(null);
-    setMembers([]);
+    setFamilyMembers([]);
     setExpenses([]);
-    setActiveMemberId(null);
+    setNotifications([]);
   };
 
-  const addMember: Ctx["addMember"] = async (name, monthlyIncome) => {
-    const color = AVATAR_COLORS[members.length % AVATAR_COLORS.length];
-    const m = await api.apiCreateMember({ name, monthlyIncome, color });
-    setMembers((prev) => [...prev, m]);
+  const updateProfile: Ctx["updateProfile"] = async (data) => {
+    const p = await api.apiUpdateProfile(data);
+    setProfile(p);
   };
 
-  const updateMember: Ctx["updateMember"] = async (id, data) => {
-    const m = await api.apiUpdateMember(id, data);
-    setMembers((prev) => prev.map((x) => (x.id === id ? m : x)));
+  const createFamily: Ctx["createFamily"] = async (familyName) => {
+    const f = await api.apiCreateFamily(familyName);
+    setFamily(f);
+    const fm = await api.apiListFamilyMembers();
+    setFamilyMembers(fm);
   };
 
-  const deleteMember: Ctx["deleteMember"] = async (id) => {
-    await api.apiDeleteMember(id);
-    setMembers((prev) => prev.filter((x) => x.id !== id));
-    setExpenses((prev) => prev.filter((e) => e.memberId !== id));
-    if (activeMemberId === id) {
-      setActiveMemberId(null);
-      localStorage.removeItem(ACTIVE_KEY);
+  const inviteMember: Ctx["inviteMember"] = async (email) => {
+    try {
+      await api.apiInviteMember(email);
+      const fm = await api.apiListFamilyMembers();
+      setFamilyMembers(fm);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? "Error al invitar" };
     }
   };
 
-  const selectMember = useCallback((id: string | null) => {
-    setActiveMemberId(id);
-    if (id) localStorage.setItem(ACTIVE_KEY, id);
-    else localStorage.removeItem(ACTIVE_KEY);
-  }, []);
+  const acceptInvite: Ctx["acceptInvite"] = async (id) => {
+    await api.apiAcceptInvite(id);
+    await refreshAll();
+  };
+
+  const rejectOrRemoveMember: Ctx["rejectOrRemoveMember"] = async (id) => {
+    await api.apiRemoveMemberOrRejectInvite(id);
+    if (familyMembers.some(m => m.id === id && m.userId === profile?.id)) {
+      // Si yo salí de la familia
+      await refreshAll();
+    } else {
+      const fm = await api.apiListFamilyMembers();
+      setFamilyMembers(fm);
+    }
+  };
 
   const addExpense: Ctx["addExpense"] = async (data) => {
-    if (!activeMemberId) return;
-    const e = await api.apiCreateExpense({ ...data, memberId: activeMemberId });
+    const e = await api.apiCreateExpense(data);
     setExpenses((prev) => [e, ...prev]);
+    // Refrescar notificaciones por si se gatilló alerta de presupuesto
+    const n = await api.apiListNotifications();
+    setNotifications(n);
   };
 
   const updateExpense: Ctx["updateExpense"] = async (id, data) => {
@@ -139,24 +164,33 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     setExpenses((prev) => prev.filter((x) => x.id !== id));
   };
 
+  const readNotification: Ctx["readNotification"] = async (id) => {
+    await api.apiReadNotification(id);
+    setNotifications((prev) => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+  };
+
   return (
     <AppCtx.Provider
       value={{
+        profile,
         family,
-        members,
+        familyMembers,
         expenses,
-        activeMember,
+        notifications,
         loading,
         signup,
         login,
         logout,
-        addMember,
-        updateMember,
-        deleteMember,
-        selectMember,
+        updateProfile,
+        createFamily,
+        inviteMember,
+        acceptInvite,
+        rejectOrRemoveMember,
         addExpense,
         updateExpense,
         deleteExpense,
+        readNotification,
+        refreshAll
       }}
     >
       {loading ? (

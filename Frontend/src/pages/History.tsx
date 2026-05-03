@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CATEGORIES, CATEGORY_COLORS, Category, Expense, formatCurrency } from "@/types";
-import { Pencil, Trash2, Filter, Download } from "lucide-react";
+import { Pencil, Trash2, Filter, Download, Wallet } from "lucide-react";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
@@ -17,10 +17,11 @@ import * as api from "@/lib/api";
 type Scope = "individual" | "familiar";
 
 const History = () => {
-  const { family, members, expenses, activeMember, updateExpense, deleteExpense } = useApp();
+  const { profile, family, familyMembers, updateExpense, deleteExpense } = useApp();
   const navigate = useNavigate();
 
-  const [scope, setScope] = useState<Scope>(activeMember ? "individual" : "familiar");
+  const isLeader = family?.leader_id === profile?.id;
+  const [scope, setScope] = useState<Scope>("individual");
   const [memberFilter, setMemberFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [from, setFrom] = useState<string>("");
@@ -29,10 +30,6 @@ const History = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
-  useEffect(() => {
-    if (!family) navigate("/login");
-  }, [family, navigate]);
-
   const [paginatedList, setPaginatedList] = useState<Expense[]>([]);
   const [totalFiltered, setTotalFiltered] = useState<number>(0);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -40,19 +37,26 @@ const History = () => {
 
   const totalPages = Math.ceil(totalFiltered / itemsPerPage);
 
+  const acceptedMembers = familyMembers.filter(m => m.status === 'accepted');
+  const allFamilyProfiles = profile ? [profile, ...acceptedMembers.map(m => ({
+    id: m.userId,
+    name: m.name || "Desconocido",
+    color: m.color || "#ccc"
+  }))] : [];
+
   useEffect(() => {
     setCurrentPage(1);
   }, [scope, memberFilter, categoryFilter, from, to]);
 
   useEffect(() => {
-    if (!family) return;
+    if (!profile) return;
     const fetchPage = async () => {
       setLoadingHistory(true);
       try {
         const p = {
           page: currentPage,
           limit: itemsPerPage,
-          memberId: scope === "individual" ? activeMember?.id : (memberFilter !== "all" ? memberFilter : undefined),
+          userId: scope === "individual" ? profile.id : (memberFilter !== "all" ? memberFilter : undefined),
           category: categoryFilter !== "all" ? categoryFilter : undefined,
           from: from || undefined,
           to: to || undefined,
@@ -67,14 +71,14 @@ const History = () => {
       }
     };
     fetchPage();
-  }, [currentPage, scope, memberFilter, categoryFilter, from, to, activeMember, family, expenses]);
+  }, [currentPage, scope, memberFilter, categoryFilter, from, to, profile]);
 
   const exportCSV = async () => {
     setExporting(true);
     const toastId = toast.loading("Preparando exportación...");
     try {
       const p = {
-        memberId: scope === "individual" ? activeMember?.id : (memberFilter !== "all" ? memberFilter : undefined),
+        userId: scope === "individual" ? profile?.id : (memberFilter !== "all" ? memberFilter : undefined),
         category: categoryFilter !== "all" ? categoryFilter : undefined,
         from: from || undefined,
         to: to || undefined,
@@ -84,7 +88,7 @@ const History = () => {
       const rows = [
         ["Fecha", "Miembro", "Categoría", "Descripción", "Monto (S/)"],
         ...dataToExport.map((e) => {
-          const m = members.find((x) => x.id === e.memberId);
+          const m = allFamilyProfiles.find((x) => x.id === e.userId);
           return [
             format(parseISO(e.date), "yyyy-MM-dd"),
             m?.name || "—",
@@ -110,66 +114,67 @@ const History = () => {
     }
   };
 
-  if (!family) return null;
+  if (!profile) return null;
 
   return (
     <Layout>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <p className="text-muted-foreground">Historial de gastos</p>
-          <h1 className="text-4xl font-bold">
-            {scope === "individual" ? activeMember?.name || "Individual" : `Familia ${family.familyName}`}
+          <h1 className="text-4xl font-bold text-gray-900">
+            {scope === "individual" ? profile.name : `Familia ${family?.family_name || ""}`}
           </h1>
         </div>
-        <Button onClick={exportCSV} variant="outline" className="glass" disabled={exporting}>
+        <Button onClick={exportCSV} variant="outline" className="glass bg-white" disabled={exporting}>
           <Download className="h-4 w-4 mr-2" /> {exporting ? "Exportando..." : "Exportar CSV"}
         </Button>
       </div>
 
       {/* Tabs scope */}
-      <div className="flex gap-2 mb-6">
-        <Button
-          variant={scope === "individual" ? "default" : "outline"}
-          onClick={() => setScope("individual")}
-          disabled={!activeMember}
-          className={scope === "individual" ? "bg-gradient-primary text-white" : "glass"}
-        >
-          Mi historial
-        </Button>
-        <Button
-          variant={scope === "familiar" ? "default" : "outline"}
-          onClick={() => setScope("familiar")}
-          className={scope === "familiar" ? "bg-gradient-primary text-white" : "glass"}
-        >
-          Historial familiar
-        </Button>
-      </div>
+      {isLeader && (
+        <div className="flex gap-2 mb-6 bg-gray-100/50 p-1 rounded-xl w-fit">
+          <Button
+            variant="ghost"
+            onClick={() => setScope("individual")}
+            className={scope === "individual" ? "bg-white shadow-sm text-indigo-600 hover:text-indigo-700" : "text-gray-500 hover:text-gray-700"}
+          >
+            Mi historial
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setScope("familiar")}
+            className={scope === "familiar" ? "bg-white shadow-sm text-indigo-600 hover:text-indigo-700" : "text-gray-500 hover:text-gray-700"}
+          >
+            Historial familiar
+          </Button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="glass rounded-2xl p-4 md:p-6 mb-6">
         <div className="flex items-center gap-2 mb-4">
-          <Filter className="h-4 w-4 text-primary" />
-          <h3 className="font-semibold">Filtros</h3>
+          <Filter className="h-4 w-4 text-indigo-500" />
+          <h3 className="font-semibold text-gray-800">Filtros</h3>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {scope === "familiar" && (
-            <div className="space-y-1">
-              <Label className="text-xs">Miembro</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-gray-600">Miembro</Label>
               <Select value={memberFilter} onValueChange={setMemberFilter}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  {members.map((m) => (
+                  {allFamilyProfiles.map((m) => (
                     <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
-          <div className="space-y-1">
-            <Label className="text-xs">Categoría</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-gray-600">Categoría</Label>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas</SelectItem>
                 {CATEGORIES.map((c) => (
@@ -178,20 +183,20 @@ const History = () => {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Desde</Label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-gray-600">Desde</Label>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="bg-white" />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Hasta</Label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-gray-600">Hasta</Label>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="bg-white" />
           </div>
         </div>
         {(memberFilter !== "all" || categoryFilter !== "all" || from || to) && (
           <Button
             variant="ghost"
             size="sm"
-            className="mt-3"
+            className="mt-4 text-gray-500 hover:text-indigo-600"
             onClick={() => { setMemberFilter("all"); setCategoryFilter("all"); setFrom(""); setTo(""); }}
           >
             Limpiar filtros
@@ -200,55 +205,69 @@ const History = () => {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="glass rounded-2xl p-5">
-          <p className="text-sm text-muted-foreground">Registros filtrados</p>
-          <p className="text-3xl font-bold">{totalFiltered}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <div className="glass rounded-2xl p-5 border border-indigo-50">
+          <p className="text-sm font-medium text-gray-500">Registros filtrados</p>
+          <p className="text-3xl font-bold text-gray-900 mt-1">{totalFiltered}</p>
         </div>
       </div>
 
       {/* List */}
-      <div className="glass rounded-2xl p-4 md:p-6 relative">
+      <div className="glass rounded-2xl p-4 md:p-6 relative min-h-[300px]">
         {loadingHistory && (
-          <div className="absolute inset-0 z-10 glass-strong rounded-2xl flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
           </div>
         )}
-        {paginatedList.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-12 text-center">No hay gastos que coincidan con los filtros.</p>
+        
+        {!loadingHistory && paginatedList.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center h-full">
+            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+              <Wallet className="w-8 h-8 text-gray-300" />
+            </div>
+            <p className="text-gray-500 font-medium">No hay gastos que coincidan con los filtros.</p>
+            <Button variant="link" onClick={() => { setMemberFilter("all"); setCategoryFilter("all"); setFrom(""); setTo(""); }} className="mt-2 text-indigo-600">
+              Mostrar todos
+            </Button>
+          </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {paginatedList.map((e) => {
-              const m = members.find((x) => x.id === e.memberId);
+              const m = allFamilyProfiles.find((x) => x.id === e.userId);
+              const isMine = e.userId === profile.id;
+              
               return (
-                <div key={e.id} className="flex items-center gap-3 p-3 rounded-xl glass hover:shadow-soft transition-smooth">
+                <div key={e.id} className="flex items-center gap-4 p-4 rounded-xl bg-white border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-200 group">
                   <div
-                    className="h-10 w-10 rounded-xl flex items-center justify-center text-white text-xs font-bold shrink-0"
+                    className="h-12 w-12 rounded-2xl flex items-center justify-center text-white text-sm font-bold shrink-0 shadow-sm group-hover:scale-105 transition-transform"
                     style={{ background: CATEGORY_COLORS[e.category] }}
                   >
                     {e.category[0]}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{e.description}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {m?.name || "—"} · {e.category} · {format(parseISO(e.date), "d MMM yyyy", { locale: es })}
+                    <p className="font-semibold text-gray-800 truncate text-base">{e.description}</p>
+                    <p className="text-xs font-medium text-gray-500 truncate mt-0.5">
+                      {m?.name || "—"} <span className="mx-1.5 opacity-50">•</span> {e.category} <span className="mx-1.5 opacity-50">•</span> {format(parseISO(e.date), "d MMM yyyy", { locale: es })}
                     </p>
                   </div>
-                  <p className="font-bold whitespace-nowrap">{formatCurrency(e.amount)}</p>
-                  {(scope === "individual" || (activeMember && e.memberId === activeMember.id)) && (
-                    <>
-                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(e)}>
-                        <Pencil className="h-3.5 w-3.5" />
+                  <p className="font-bold text-lg text-gray-900 tracking-tight whitespace-nowrap">{formatCurrency(e.amount)}</p>
+                  
+                  {isMine ? (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50" onClick={() => setEditing(e)}>
+                        <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8 text-destructive"
+                        className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
                         onClick={() => { deleteExpense(e.id); toast.success("Eliminado"); }}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
-                    </>
+                    </div>
+                  ) : (
+                    <div className="w-[72px]" /> // Spacer to align amounts
                   )}
                 </div>
               );
@@ -257,12 +276,12 @@ const History = () => {
         )}
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/10">
-            <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>
+          <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-100">
+            <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="bg-white">
               Anterior
             </Button>
-            <span className="text-sm text-muted-foreground font-medium">Página {currentPage} de {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)}>
+            <span className="text-sm text-gray-500 font-medium">Página <span className="text-gray-900">{currentPage}</span> de <span className="text-gray-900">{totalPages}</span></span>
+            <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="bg-white">
               Siguiente
             </Button>
           </div>
