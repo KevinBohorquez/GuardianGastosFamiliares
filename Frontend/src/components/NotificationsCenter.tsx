@@ -1,7 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
-import { Bell, Check, X, AlertTriangle, Users } from "lucide-react";
+import { Bell, Check, X, AlertTriangle, Users, MailOpen } from "lucide-react";
 import { Button } from "./ui/button";
+import { formatDistanceToNow, parseISO, format } from "date-fns";
+import { es } from "date-fns/locale";
 
 export const NotificationsCenter = () => {
   const { notifications, readNotification, acceptInvite, rejectOrRemoveMember } = useApp();
@@ -10,81 +12,180 @@ export const NotificationsCenter = () => {
 
   const unread = notifications.filter(n => !n.isRead).length;
 
-  const handleToggle = () => setOpen(!open);
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const handleAcceptInvite = async (n: any) => {
-    // relatedEntityId is the family_members id
-    // Wait, the notification stores related_entity_id as family_id
-    // But we need the family_members id to accept it.
-    // Actually, acceptInvite requires the family_members id.
-    // I should modify the backend to return the invite id in relatedEntityId, or just find it.
-    // For now, let's assume relatedEntityId is the invite id. (I need to check the backend invite logic. It inserts related_entity_id: family.id)
-    // I will fix the backend to put family_members.id as related_entity_id.
-    await acceptInvite(n.relatedEntityId);
-    await readNotification(n.id);
+    try {
+      await acceptInvite(n.relatedEntityId);
+      await readNotification(n.id);
+    } catch (e: any) {
+      console.error(e);
+    }
   };
 
   const handleRejectInvite = async (n: any) => {
-    await rejectOrRemoveMember(n.relatedEntityId);
-    await readNotification(n.id);
+    try {
+      await rejectOrRemoveMember(n.relatedEntityId);
+      await readNotification(n.id);
+    } catch (e: any) {
+      console.error(e);
+    }
   };
+
+  const formatDate = (iso: string) => {
+    try {
+      const date = parseISO(iso);
+      const relative = formatDistanceToNow(date, { addSuffix: true, locale: es });
+      const absolute = format(date, "d 'de' MMMM 'a las' HH:mm", { locale: es });
+      return { relative, absolute };
+    } catch {
+      return { relative: "hace un momento", absolute: "" };
+    }
+  };
+
+  const sorted = [...notifications].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 
   return (
     <div className="relative" ref={ref}>
-      <Button variant="ghost" size="icon" onClick={handleToggle} className="relative rounded-full hover:bg-black/5">
-        <Bell className="w-5 h-5 text-gray-700" />
+      <button
+        onClick={() => setOpen(!open)}
+        className="relative flex items-center justify-center w-9 h-9 rounded-full hover:bg-gray-100 transition-colors"
+      >
+        <Bell className="w-5 h-5 text-gray-500" />
         {unread > 0 && (
-          <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white" />
+          <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse" />
         )}
-      </Button>
+      </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
-          <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-            <h3 className="font-semibold text-gray-800">Notificaciones</h3>
-            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{unread} nuevas</span>
-          </div>
+        <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden"
+          style={{ animation: "fadeSlideIn 0.15s ease-out" }}>
           
-          <div className="max-h-[400px] overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 text-sm">
-                No tienes notificaciones
+          {/* Header */}
+          <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center bg-gradient-to-r from-indigo-50/50 to-purple-50/50">
+            <div>
+              <h3 className="font-bold text-gray-900 text-base">Notificaciones</h3>
+              {unread > 0 && (
+                <p className="text-xs text-indigo-600 font-medium mt-0.5">{unread} sin leer</p>
+              )}
+            </div>
+            {unread > 0 && (
+              <button
+                onClick={() => notifications.filter(n => !n.isRead).forEach(n => readNotification(n.id))}
+                className="text-xs text-gray-500 hover:text-indigo-600 font-medium transition-colors"
+              >
+                Marcar todas
+              </button>
+            )}
+          </div>
+
+          {/* List */}
+          <div className="max-h-[480px] overflow-y-auto">
+            {sorted.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-3">
+                  <MailOpen className="w-7 h-7 text-gray-300" />
+                </div>
+                <p className="text-sm font-medium text-gray-500">Todo al día</p>
+                <p className="text-xs text-gray-400 mt-1">No tienes notificaciones pendientes</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-50">
-                {notifications.map((n) => (
-                  <div key={n.id} className={`p-4 transition-colors ${n.isRead ? 'bg-white' : 'bg-blue-50/50'}`}>
-                    <div className="flex gap-3">
-                      <div className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${n.type === 'expense_alert' ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'}`}>
-                        {n.type === 'expense_alert' ? <AlertTriangle className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-                      </div>
-                      <div className="flex-1">
-                        <p className={`text-sm ${!n.isRead ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
-                          {n.message}
-                        </p>
-                        
-                        {n.type === 'family_invite' && !n.isRead && (
-                          <div className="flex gap-2 mt-3">
-                            <Button size="sm" onClick={() => handleAcceptInvite(n)} className="h-8 px-3 text-xs bg-primary hover:bg-primary/90 text-white rounded-lg">
-                              <Check className="w-3 h-3 mr-1" /> Aceptar
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => handleRejectInvite(n)} className="h-8 px-3 text-xs rounded-lg">
-                              <X className="w-3 h-3 mr-1" /> Rechazar
-                            </Button>
-                          </div>
-                        )}
-                        
-                        {n.type === 'expense_alert' && !n.isRead && (
-                          <div className="mt-2">
-                            <button onClick={() => readNotification(n.id)} className="text-xs text-primary font-medium hover:underline">
-                              Marcar como leída
+              <div>
+                {sorted.map((n) => {
+                  const { relative, absolute } = formatDate(n.createdAt);
+                  const isInvite = n.type === "family_invite";
+                  const isAlert = n.type === "expense_alert";
+
+                  return (
+                    <div
+                      key={n.id}
+                      className={`px-5 py-4 border-b border-gray-50 last:border-0 transition-colors ${n.isRead ? 'bg-white' : 'bg-indigo-50/30'}`}
+                    >
+                      <div className="flex gap-3">
+                        {/* Icon */}
+                        <div className={`mt-0.5 w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                          isAlert
+                            ? 'bg-red-100'
+                            : 'bg-indigo-100'
+                        }`}>
+                          {isAlert
+                            ? <AlertTriangle className="w-5 h-5 text-red-600" />
+                            : <Users className="w-5 h-5 text-indigo-600" />
+                          }
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          {/* Badge */}
+                          <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md mb-1.5 ${
+                            isAlert ? 'bg-red-100 text-red-700' : 'bg-indigo-100 text-indigo-700'
+                          }`}>
+                            {isAlert ? "Alerta de presupuesto" : "Invitación familiar"}
+                          </span>
+
+                          <p className={`text-sm leading-snug ${!n.isRead ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
+                            {n.message}
+                          </p>
+
+                          {/* Timestamp */}
+                          <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                            <span>{relative}</span>
+                            {absolute && (
+                              <>
+                                <span className="opacity-40">·</span>
+                                <span className="opacity-60">{absolute}</span>
+                              </>
+                            )}
+                          </p>
+
+                          {/* Actions */}
+                          {isInvite && !n.isRead && (
+                            <div className="flex gap-2 mt-3">
+                              <Button
+                                size="sm"
+                                onClick={() => handleAcceptInvite(n)}
+                                className="h-8 px-4 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
+                              >
+                                <Check className="w-3 h-3 mr-1.5" /> Aceptar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleRejectInvite(n)}
+                                className="h-8 px-4 text-xs rounded-lg border-gray-200 text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                              >
+                                <X className="w-3 h-3 mr-1.5" /> Rechazar
+                              </Button>
+                            </div>
+                          )}
+
+                          {isAlert && !n.isRead && (
+                            <button
+                              onClick={() => readNotification(n.id)}
+                              className="mt-2 text-xs text-indigo-600 font-medium hover:text-indigo-800 transition-colors"
+                            >
+                              Entendido →
                             </button>
-                          </div>
+                          )}
+                        </div>
+
+                        {/* Unread dot */}
+                        {!n.isRead && (
+                          <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
                         )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

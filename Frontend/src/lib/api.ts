@@ -63,11 +63,20 @@ export const apiListFamilyMembers = () => request<FamilyMember[]>("/api/family/m
 export const apiInviteMember = (email: string) =>
   request<{ ok: true; invite: any }>("/api/family/invite", { method: "POST", body: JSON.stringify({ email }) });
 
+export const apiCheckEmail = (email: string) =>
+  request<{ registered: boolean }>(`/api/family/check-email?email=${encodeURIComponent(email)}`);
+
 export const apiAcceptInvite = (id: string) =>
   request<{ ok: true }>(`/api/family/invite/${id}/accept`, { method: "PATCH" });
 
 export const apiRemoveMemberOrRejectInvite = (id: string) =>
   request<{ ok: true }>(`/api/family/invite/${id}`, { method: "DELETE" });
+
+export const apiUpdateMemberIncome = (userId: string, monthlyIncome: number) =>
+  request<{ ok: true }>(`/api/family/members/${userId}/income`, { method: "PATCH", body: JSON.stringify({ monthlyIncome }) });
+
+export const apiLeaderDeleteExpense = (id: string) =>
+  request<{ ok: true }>(`/api/family/expenses/${id}`, { method: "DELETE" });
 
 // ── Expenses ────────────────────────────────────────────
 export const apiListExpenses = () => request<Expense[]>("/api/expenses");

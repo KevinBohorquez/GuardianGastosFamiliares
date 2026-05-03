@@ -1,115 +1,175 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { CATEGORIES, CATEGORY_COLORS, Category, formatCurrency } from "@/types";
-import { TrendingDown, TrendingUp, Users, Wallet, Plus, Mail, Check, X, ShieldAlert } from "lucide-react";
+import { TrendingDown, TrendingUp, Users, Wallet, Plus, Mail, X, ShieldAlert, Pencil, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import * as api from "@/lib/api";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line,
 } from "recharts";
 import { format, parseISO, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
+import { ExpenseForm } from "@/components/ExpenseForm";
+import { Expense } from "@/types";
 
+// ── Avatar pill ────────────────────────────────────────────────────────
+const Avatar = ({ name, color, size = "md" }: { name: string; color?: string; size?: "sm" | "md" | "lg" }) => {
+  const sz = { sm: "w-8 h-8 text-xs", md: "w-12 h-12 text-base", lg: "w-16 h-16 text-2xl" }[size];
+  return (
+    <div className={`${sz} rounded-full flex items-center justify-center font-bold text-white shrink-0`} style={{ background: color || "#6366f1" }}>
+      {name[0]?.toUpperCase()}
+    </div>
+  );
+};
+
+// ── Member card for the management modal ──────────────────────────────
+const MemberCard = ({
+  name, color, monthlyIncome, status, isLeader, onRemove, onEditIncome,
+}: {
+  name: string; color?: string; monthlyIncome?: number; status: string;
+  isLeader?: boolean; onRemove?: () => void; onEditIncome?: (v: number) => void;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [income, setIncome] = useState(monthlyIncome?.toString() || "0");
+
+  const save = () => {
+    onEditIncome?.(Number(income));
+    setEditing(false);
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-2 bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative group">
+      {onRemove && (
+        <button onClick={onRemove} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-red-50 flex items-center justify-center text-red-500 hover:bg-red-100">
+          <X className="w-3 h-3" />
+        </button>
+      )}
+      <Avatar name={name} color={color} size="lg" />
+      <p className="font-semibold text-gray-900 text-sm text-center leading-tight">{name}</p>
+      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${isLeader ? 'bg-indigo-100 text-indigo-700' : status === 'accepted' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-600'}`}>
+        {isLeader ? "Líder" : status === "accepted" ? "Miembro" : "Pendiente"}
+      </span>
+      {onEditIncome && status === "accepted" && (
+        <div className="w-full mt-1">
+          {editing ? (
+            <div className="flex items-center gap-1">
+              <Input type="number" min="0" value={income} onChange={e => setIncome(e.target.value)} className="h-7 text-xs text-center px-1" />
+              <button onClick={save} className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 hover:bg-indigo-200"><Check className="w-3 h-3" /></button>
+            </div>
+          ) : (
+            <button onClick={() => setEditing(true)} className="w-full flex items-center justify-center gap-1 text-xs text-gray-400 hover:text-indigo-600 transition-colors">
+              <Pencil className="w-3 h-3" /> S/ {Number(monthlyIncome || 0).toFixed(2)} / mes
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Main page ──────────────────────────────────────────────────────────
 const FamilyOverview = () => {
-  const { profile, family, familyMembers, expenses, createFamily, inviteMember, rejectOrRemoveMember } = useApp();
+  const { profile, family, familyMembers, expenses, createFamily, inviteMember, rejectOrRemoveMember, updateMemberIncome, leaderDeleteExpense, deleteExpense, updateExpense, refreshAll } = useApp();
   const navigate = useNavigate();
+
   const [newFamilyName, setNewFamilyName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [emailStatus, setEmailStatus] = useState<"idle" | "checking" | "found" | "notfound">("idle");
+  const [showMembers, setShowMembers] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [activeTab, setActiveTab] = useState<"family" | "personal">("family");
+
+  const isLeader = family?.leader_id === profile?.id;
+  const acceptedMembers = familyMembers.filter(m => m.status === "accepted");
+  const allProfiles = profile
+    ? [{ id: profile.id, name: profile.name, color: profile.color, monthlyIncome: profile.monthlyIncome, isMe: true },
+       ...acceptedMembers.map(m => ({ id: m.userId, name: m.name || "Desconocido", color: m.color || "#ccc", monthlyIncome: m.monthlyIncome || 0, isMe: false }))]
+    : [];
+
+  const monthStart = startOfMonth(new Date());
+  const familyExpenses = expenses;
+  const monthly = familyExpenses.filter(e => parseISO(e.date) >= monthStart);
+  const myMonthly = monthly.filter(e => e.userId === profile?.id);
+
+  const totalIncome = isLeader ? allProfiles.reduce((s, p) => s + p.monthlyIncome, 0) : profile?.monthlyIncome || 0;
+  const totalSpent = isLeader ? monthly.reduce((s, e) => s + e.amount, 0) : myMonthly.reduce((s, e) => s + e.amount, 0);
+  const balance = totalIncome - totalSpent;
+
+  // ── Check email ─────────────────────────────────────────────────────
+  const checkEmail = async (email: string) => {
+    if (!email || !email.includes("@")) { setEmailStatus("idle"); return; }
+    setEmailStatus("checking");
+    try {
+      const r = await api.apiCheckEmail(email);
+      setEmailStatus(r.registered ? "found" : "notfound");
+    } catch { setEmailStatus("idle"); }
+  };
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (emailStatus === "notfound") return toast.error("Ese correo no está registrado en el sistema.");
+    if (!inviteEmail.trim()) return;
+    const r = await inviteMember(inviteEmail);
+    if (r.ok) { toast.success("Invitación enviada"); setInviteEmail(""); setEmailStatus("idle"); }
+    else toast.error(r.error);
+  };
 
   const handleCreateFamily = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFamilyName.trim()) return;
     await createFamily(newFamilyName);
-    toast.success("Familia creada exitosamente");
+    toast.success("¡Familia creada exitosamente!");
   };
 
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    const r = await inviteMember(inviteEmail);
-    if (r.ok) {
-      toast.success("Invitación enviada");
-      setInviteEmail("");
-    } else {
-      toast.error(r.error);
-    }
-  };
+  // ── Charts data ──────────────────────────────────────────────────────
+  const expensesForView = activeTab === "personal" ? myMonthly : (isLeader ? monthly : myMonthly);
 
-  const monthStart = startOfMonth(new Date());
-  const monthly = expenses.filter((e) => parseISO(e.date) >= monthStart);
-
-  // Consideramos solo a los miembros aceptados y al líder
-  const acceptedMembers = familyMembers.filter(m => m.status === 'accepted');
-  const allFamilyProfiles = profile ? [profile, ...acceptedMembers.map(m => ({
-    id: m.userId,
-    name: m.name || "Desconocido",
-    monthlyIncome: m.monthlyIncome || 0,
-    color: m.color || "#000"
-  }))] : [];
-
-  const totalIncome = allFamilyProfiles.reduce((s, p) => s + p.monthlyIncome, 0);
-  const totalSpent = monthly.reduce((s, e) => s + e.amount, 0);
-  const balance = totalIncome - totalSpent;
-
-  const byCategory = useMemo(() => {
+  const byCategory = (() => {
     const map = new Map<Category, number>();
-    monthly.forEach((e) => map.set(e.category, (map.get(e.category) || 0) + e.amount));
-    return CATEGORIES.map((c) => ({ name: c, value: map.get(c) || 0, fill: CATEGORY_COLORS[c] })).filter((d) => d.value > 0);
-  }, [monthly]);
+    expensesForView.forEach(e => map.set(e.category, (map.get(e.category) || 0) + e.amount));
+    return CATEGORIES.map(c => ({ name: c, value: map.get(c) || 0, fill: CATEGORY_COLORS[c] })).filter(d => d.value > 0);
+  })();
 
-  const byMember = useMemo(() => {
-    return allFamilyProfiles.map((p) => {
-      const spent = monthly.filter((e) => e.userId === p.id).reduce((s, e) => s + e.amount, 0);
-      return { name: p.name, Ingreso: p.monthlyIncome, Gasto: spent, color: p.color };
-    });
-  }, [allFamilyProfiles, monthly]);
-
-  const familyByDay = useMemo(() => {
+  const byDay = (() => {
     const map = new Map<string, number>();
-    monthly.forEach((e) => {
-      const d = e.date.slice(0, 10);
-      map.set(d, (map.get(d) || 0) + e.amount);
-    });
-    return Array.from(map.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, amount]) => ({ date: format(parseISO(date), "d MMM", { locale: es }), amount }));
-  }, [monthly]);
+    expensesForView.forEach(e => { const d = e.date.slice(0, 10); map.set(d, (map.get(d) || 0) + e.amount); });
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date: format(parseISO(date), "d MMM", { locale: es }), amount }));
+  })();
 
-  const distributionByMember = useMemo(() => {
-    return allFamilyProfiles.map((p) => {
-      const spent = monthly.filter((e) => e.userId === p.id).reduce((s, e) => s + e.amount, 0);
-      return { name: p.name, value: spent, fill: p.color };
-    }).filter((d) => d.value > 0);
-  }, [allFamilyProfiles, monthly]);
+  const byMember = isLeader ? allProfiles.map(p => {
+    const spent = monthly.filter(e => e.userId === p.id).reduce((s, e) => s + e.amount, 0);
+    return { name: p.name, Ingreso: p.monthlyIncome, Gasto: spent };
+  }) : [];
 
-  const recent = [...expenses]
+  const recentExpenses = [...(isLeader ? monthly : myMonthly)]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 15);
 
   if (!profile) return null;
 
+  // ── No family: create screen ─────────────────────────────────────────
   if (!family) {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="glass-strong p-10 rounded-3xl max-w-md w-full text-center">
+          <div className="glass-strong p-10 rounded-3xl max-w-md w-full text-center shadow-xl">
             <div className="w-16 h-16 bg-gradient-hero rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-glow">
               <Users className="w-8 h-8 text-white" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Aún no tienes familia</h2>
-            <p className="text-muted-foreground mb-8 text-sm">Crea una familia para invitar a otras personas y consolidar los gastos del hogar.</p>
-            
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Crea tu familia</h2>
+            <p className="text-gray-500 mb-8 text-sm leading-relaxed">Forma un grupo familiar para consolidar gastos e ingresos, e invita a tus allegados.</p>
             <form onSubmit={handleCreateFamily} className="space-y-4 text-left">
               <div className="space-y-2">
-                <Label>Nombre de la Familia</Label>
-                <Input value={newFamilyName} onChange={(e) => setNewFamilyName(e.target.value)} placeholder="Ej: Los Increíbles" required />
+                <Label>Nombre de la familia</Label>
+                <Input value={newFamilyName} onChange={e => setNewFamilyName(e.target.value)} placeholder="Ej: Los García" required />
               </div>
-              <Button type="submit" className="w-full bg-primary text-white">
-                <Plus className="w-4 h-4 mr-2" /> Crear Familia
+              <Button type="submit" className="w-full bg-primary text-white shadow-sm">
+                <Plus className="w-4 h-4 mr-2" /> Crear familia
               </Button>
             </form>
           </div>
@@ -118,232 +178,214 @@ const FamilyOverview = () => {
     );
   }
 
-  const isLeader = family.leader_id === profile.id;
-
-  return (
-    <Layout>
-      <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <p className="text-muted-foreground font-medium mb-1">Vista familiar</p>
-          <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Familia {family.family_name}</h1>
-          <div className="flex items-center gap-2 mt-2">
-            <span className={`px-2.5 py-1 rounded-md text-xs font-semibold ${isLeader ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>
-              {isLeader ? 'Líder' : 'Miembro'}
-            </span>
-          </div>
+  // ── Member view (not leader) ─────────────────────────────────────────
+  if (!isLeader) {
+    return (
+      <Layout>
+        <div className="mb-8">
+          <p className="text-gray-500 font-medium">Mi familia</p>
+          <h1 className="text-4xl font-bold text-gray-900">Familia {family.family_name}</h1>
+          <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-700">Miembro</span>
         </div>
-
-        {isLeader && (
-          <form onSubmit={handleInvite} className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-gray-100">
-            <div className="relative">
-              <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input 
-                type="email" 
-                placeholder="Correo para invitar..." 
-                value={inviteEmail} 
-                onChange={(e) => setInviteEmail(e.target.value)}
-                className="pl-9 border-none bg-transparent h-9 focus-visible:ring-0 focus-visible:ring-offset-0 w-64 text-sm"
-              />
-            </div>
-            <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg h-9 px-4">
-              Invitar
-            </Button>
-          </form>
-        )}
-      </div>
-
-      {!isLeader ? (
-        <div className="glass rounded-3xl p-8 max-w-2xl mx-auto text-center border border-indigo-50 shadow-lg mt-12">
+        <div className="glass rounded-3xl p-10 max-w-xl mx-auto text-center border border-indigo-50 shadow-lg">
           <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
             <ShieldAlert className="w-10 h-10 text-indigo-400" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">Acceso Restringido</h2>
-          <p className="text-gray-500 mb-8 max-w-md mx-auto leading-relaxed">
-            Solo el líder de la familia puede ver el dashboard consolidado para proteger la privacidad financiera de los miembros.
-          </p>
-          <Button variant="destructive" onClick={() => {
-            if (window.confirm("¿Estás seguro de abandonar esta familia?")) {
-              // Buscar mi membership ID. 
-              const myMem = familyMembers.find(m => m.userId === profile.id);
-              if (myMem) rejectOrRemoveMember(myMem.id);
-            }
-          }} className="shadow-sm">
-            Abandonar Familia
+          <h2 className="text-xl font-bold text-gray-900 mb-3">Vista consolidada privada</h2>
+          <p className="text-gray-500 mb-8 leading-relaxed text-sm">Solo el líder puede ver el dashboard familiar para proteger la privacidad financiera de los miembros. Tus datos personales están disponibles en tu Dashboard.</p>
+          <Button variant="destructive" onClick={async () => {
+            if (!window.confirm("¿Seguro que quieres abandonar esta familia?")) return;
+            const myMem = familyMembers.find(m => m.userId === profile.id);
+            if (myMem) { await rejectOrRemoveMember(myMem.id); toast.success("Saliste de la familia"); }
+          }}>
+            Abandonar familia
           </Button>
         </div>
-      ) : (
-        <>
-          {/* Dashboard del Líder */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div className="glass rounded-2xl p-6 relative overflow-hidden">
-              <div className="absolute right-0 top-0 w-20 h-20 bg-indigo-50 rounded-bl-full opacity-50" />
-              <Users className="h-5 w-5 text-indigo-500 mb-2 relative z-10" />
-              <p className="text-sm font-medium text-gray-500 relative z-10">Miembros Activos</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1 relative z-10">{allFamilyProfiles.length}</p>
+      </Layout>
+    );
+  }
+
+  // ── Leader view ──────────────────────────────────────────────────────
+  return (
+    <Layout>
+      {/* Header */}
+      <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <p className="text-gray-500 font-medium">Vista familiar — Líder</p>
+          <h1 className="text-4xl font-bold text-gray-900">Familia {family.family_name}</h1>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setShowMembers(true)} className="bg-white border-gray-200">
+            <Users className="w-4 h-4 mr-2" /> Gestionar miembros
+          </Button>
+          {/* Invite form */}
+          <form onSubmit={handleInvite} className="flex items-center gap-2 bg-white p-1.5 rounded-xl shadow-sm border border-gray-100">
+            <div className="relative">
+              <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Input
+                type="email"
+                placeholder="Invitar por correo..."
+                value={inviteEmail}
+                onChange={e => { setInviteEmail(e.target.value); setEmailStatus("idle"); }}
+                onBlur={() => checkEmail(inviteEmail)}
+                className="pl-9 border-none bg-transparent h-9 focus-visible:ring-0 w-56 text-sm"
+              />
+              {emailStatus === "checking" && <Loader2 className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 animate-spin" />}
+              {emailStatus === "found" && <Check className="w-3 h-3 text-emerald-500 absolute right-2 top-1/2 -translate-y-1/2" />}
+              {emailStatus === "notfound" && <X className="w-3 h-3 text-red-500 absolute right-2 top-1/2 -translate-y-1/2" />}
             </div>
-            <div className="glass rounded-2xl p-6 relative overflow-hidden">
-              <div className="absolute right-0 top-0 w-20 h-20 bg-emerald-50 rounded-bl-full opacity-50" />
-              <Wallet className="h-5 w-5 text-emerald-500 mb-2 relative z-10" />
-              <p className="text-sm font-medium text-gray-500 relative z-10">Ingresos Totales</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1 relative z-10">{formatCurrency(totalIncome)}</p>
-            </div>
-            <div className="glass rounded-2xl p-6 relative overflow-hidden">
-               <div className="absolute right-0 top-0 w-20 h-20 bg-red-50 rounded-bl-full opacity-50" />
-              <TrendingDown className="h-5 w-5 text-red-500 mb-2 relative z-10" />
-              <p className="text-sm font-medium text-gray-500 relative z-10">Gasto Familiar (Mes)</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1 relative z-10">{formatCurrency(totalSpent)}</p>
-            </div>
-            <div className="glass rounded-2xl p-6 relative overflow-hidden">
-               <div className="absolute right-0 top-0 w-20 h-20 bg-blue-50 rounded-bl-full opacity-50" />
-              <TrendingUp className={`h-5 w-5 mb-2 relative z-10 ${balance >= 0 ? "text-blue-500" : "text-red-500"}`} />
-              <p className="text-sm font-medium text-gray-500 relative z-10">Balance Familiar</p>
-              <p className={`text-2xl font-bold mt-1 relative z-10 ${balance >= 0 ? "text-blue-600" : "text-red-600"}`}>{formatCurrency(balance)}</p>
+            <Button type="submit" size="sm" disabled={emailStatus === "notfound" || emailStatus === "checking"} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg h-9 px-4">
+              Invitar
+            </Button>
+          </form>
+        </div>
+      </div>
+
+      {/* Email feedback */}
+      {emailStatus === "found" && <p className="text-xs text-emerald-600 font-medium mb-4">✓ Correo registrado — puedes enviar la invitación</p>}
+      {emailStatus === "notfound" && <p className="text-xs text-red-500 font-medium mb-4">✗ No hay ningún usuario registrado con ese correo</p>}
+
+      {/* Tab: Personal / Familiar */}
+      <div className="flex gap-2 mb-8 bg-gray-100/60 p-1 rounded-xl w-fit">
+        {(["family", "personal"] as const).map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab ? "bg-white shadow-sm text-indigo-700" : "text-gray-500 hover:text-gray-700"}`}>
+            {tab === "family" ? "Vista familiar" : "Mi vista personal"}
+          </button>
+        ))}
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {[
+          { icon: <Users className="h-5 w-5 text-indigo-500" />, label: "Miembros activos", value: allProfiles.length, color: "bg-indigo-50" },
+          { icon: <Wallet className="h-5 w-5 text-emerald-500" />, label: activeTab === "family" ? "Ingresos totales" : "Mi ingreso", value: formatCurrency(totalIncome), color: "bg-emerald-50" },
+          { icon: <TrendingDown className="h-5 w-5 text-red-500" />, label: activeTab === "family" ? "Gasto familiar (mes)" : "Mi gasto (mes)", value: formatCurrency(totalSpent), color: "bg-red-50" },
+          { icon: <TrendingUp className={`h-5 w-5 ${balance >= 0 ? "text-blue-500" : "text-red-500"}`} />, label: "Balance", value: formatCurrency(balance), color: "bg-blue-50" },
+        ].map((kpi, i) => (
+          <div key={i} className="glass rounded-2xl p-5 relative overflow-hidden">
+            <div className={`absolute right-0 top-0 w-20 h-20 ${kpi.color} rounded-bl-full opacity-60`} />
+            <div className="relative z-10">{kpi.icon}<p className="text-xs font-medium text-gray-500 mt-2">{kpi.label}</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{kpi.value}</p>
             </div>
           </div>
+        ))}
+      </div>
 
-          {/* Miembros / Invitaciones */}
-          <div className="glass rounded-2xl p-6 mb-8">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center"><Users className="w-4 h-4 mr-2" /> Gestión de Miembros</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 flex items-center gap-3">
-                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm" style={{ backgroundColor: profile.color }}>
-                   {profile.name[0]?.toUpperCase()}
-                 </div>
-                 <div>
-                   <p className="font-semibold text-gray-900 text-sm leading-tight">{profile.name} (Tú)</p>
-                   <p className="text-xs text-indigo-600 font-medium mt-0.5">Líder</p>
-                 </div>
-              </div>
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+        <div className="glass rounded-2xl p-6">
+          <h3 className="font-semibold text-gray-800 mb-5">Por categoría (mes)</h3>
+          {byCategory.length === 0
+            ? <div className="h-[240px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl"><p className="text-sm text-gray-400">Sin datos</p></div>
+            : <ResponsiveContainer width="100%" height={240}><PieChart><Pie data={byCategory} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={4}>
+                {byCategory.map((d, i) => <Cell key={i} fill={d.fill} />)}
+              </Pie><Tooltip formatter={(v: number) => formatCurrency(v)} /></PieChart></ResponsiveContainer>}
+        </div>
+        <div className="glass rounded-2xl p-6">
+          <h3 className="font-semibold text-gray-800 mb-5">Tendencia diaria</h3>
+          {byDay.length === 0
+            ? <div className="h-[240px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl"><p className="text-sm text-gray-400">Sin datos</p></div>
+            : <ResponsiveContainer width="100%" height={240}><LineChart data={byDay} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Line type="monotone" dataKey="amount" stroke="#6366f1" strokeWidth={3} dot={false} />
+              </LineChart></ResponsiveContainer>}
+        </div>
+      </div>
 
-              {familyMembers.map((m) => (
-                <div key={m.id} className="p-4 rounded-xl border border-gray-100 bg-white flex items-center justify-between gap-3 shadow-sm hover:border-gray-200 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm" style={{ backgroundColor: m.color || '#ccc' }}>
-                      {m.name?.[0]?.toUpperCase() || "?"}
+      {/* Ingresos vs Gastos por miembro (solo vista familiar) */}
+      {activeTab === "family" && byMember.length > 1 && (
+        <div className="glass rounded-2xl p-6 mb-8">
+          <h3 className="font-semibold text-gray-800 mb-5">Ingresos vs Gastos por miembro</h3>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={byMember} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+              <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+              <YAxis fontSize={11} tickLine={false} axisLine={false} />
+              <Tooltip formatter={(v: number) => formatCurrency(v)} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Ingreso" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={30} />
+              <Bar dataKey="Gasto" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={30} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Recent expenses list */}
+      <div className="glass rounded-2xl p-6">
+        <h3 className="font-semibold text-gray-800 mb-5">
+          {activeTab === "family" ? "Gastos recientes (familia)" : "Mis gastos recientes"}
+        </h3>
+        {recentExpenses.length === 0
+          ? <div className="py-12 flex flex-col items-center gap-2 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl"><Wallet className="w-8 h-8 opacity-50" /><p className="text-sm">Sin registros</p></div>
+          : <div className="space-y-3">
+              {recentExpenses.map(e => {
+                const owner = allProfiles.find(p => p.id === e.userId);
+                const isMine = e.userId === profile.id;
+                return (
+                  <div key={e.id} className="flex items-center gap-3 p-4 rounded-xl bg-white border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group">
+                    <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white text-sm font-bold" style={{ background: CATEGORY_COLORS[e.category] }}>{e.category[0]}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-800 text-sm truncate">{e.description}</p>
+                      <p className="text-xs text-gray-500">{owner?.name || "—"} · {e.category} · {format(parseISO(e.date), "d MMM", { locale: es })}</p>
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900 text-sm leading-tight">{m.name || m.userId.substring(0, 8)}</p>
-                      <p className={`text-xs font-medium mt-0.5 ${m.status === 'accepted' ? 'text-emerald-600' : 'text-amber-500'}`}>
-                        {m.status === 'accepted' ? 'Miembro' : 'Pendiente'}
-                      </p>
+                    <p className="font-bold text-gray-900">{formatCurrency(e.amount)}</p>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {isMine && <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:text-indigo-600" onClick={() => setEditingExpense(e)}><Pencil className="h-3.5 w-3.5" /></Button>}
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:text-red-600" onClick={async () => {
+                        if (isMine) { await deleteExpense(e.id); } else { await leaderDeleteExpense(e.id); }
+                        toast.success("Eliminado");
+                      }}><X className="h-3.5 w-3.5" /></Button>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => rejectOrRemoveMember(m.id)} className="text-gray-400 hover:text-red-500 h-8 w-8">
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
+                );
+              })}
+            </div>
+        }
+      </div>
+
+      {/* Members modal */}
+      {showMembers && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setShowMembers(false); }}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center rounded-t-3xl">
+              <h2 className="text-lg font-bold text-gray-900">Miembros de la familia</h2>
+              <button onClick={() => setShowMembers(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {/* Leader card */}
+              <MemberCard name={profile.name} color={profile.color} monthlyIncome={profile.monthlyIncome} status="accepted" isLeader />
+              {/* Members */}
+              {familyMembers.map(m => (
+                <MemberCard
+                  key={m.id}
+                  name={m.name || "Desconocido"}
+                  color={m.color}
+                  monthlyIncome={m.monthlyIncome}
+                  status={m.status}
+                  onRemove={async () => {
+                    if (!window.confirm(`¿Eliminar a ${m.name} de la familia?`)) return;
+                    await rejectOrRemoveMember(m.id);
+                    toast.success(`${m.name} eliminado`);
+                  }}
+                  onEditIncome={m.status === "accepted" ? async (v) => {
+                    await updateMemberIncome(m.userId, v);
+                    toast.success("Ingreso actualizado");
+                  } : undefined}
+                />
               ))}
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-            <div className="glass rounded-2xl p-6">
-              <h3 className="font-semibold text-gray-900 mb-6">Gastos por categoría (mes)</h3>
-              {byCategory.length === 0 ? (
-                <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-                  <p className="text-sm text-gray-400 font-medium">Sin datos este mes</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie data={byCategory} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={4} label={(d) => d.name} labelLine={false}>
-                      {byCategory.map((d, i) => <Cell key={i} fill={d.fill} stroke="rgba(255,255,255,0.5)" strokeWidth={2}/>)}
-                    </Pie>
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,0.1)' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-            <div className="glass rounded-2xl p-6">
-              <h3 className="font-semibold text-gray-900 mb-6">Ingresos vs Gastos por miembro</h3>
-              {byMember.length <= 1 ? (
-                <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl flex-col gap-2">
-                  <p className="text-sm text-gray-400 font-medium">Agrega miembros para comparar</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={byMember} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                    <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} tick={{ fill: '#6B7280' }} dy={10} />
-                    <YAxis fontSize={11} tickLine={false} axisLine={false} tick={{ fill: '#6B7280' }} tickFormatter={(value) => `S/${value}`} />
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} cursor={{ fill: 'rgba(99, 102, 241, 0.05)' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,0.1)' }} />
-                    <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
-                    <Bar dataKey="Ingreso" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={30} />
-                    <Bar dataKey="Gasto" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={30} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-            <div className="glass rounded-2xl p-6">
-              <h3 className="font-semibold text-gray-900 mb-6">Tendencia de Gasto Diario</h3>
-              {familyByDay.length === 0 ? (
-                <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-                  <p className="text-sm text-gray-400 font-medium">Sin datos este mes</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={familyByDay} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                    <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} tick={{ fill: '#6B7280' }} dy={10} />
-                    <YAxis fontSize={11} tickLine={false} axisLine={false} tick={{ fill: '#6B7280' }} tickFormatter={(value) => `S/${value}`} />
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,0.1)' }} />
-                    <Line type="monotone" dataKey="amount" stroke="#6366f1" strokeWidth={3} dot={{ fill: "#6366f1", strokeWidth: 2, r: 4 }} activeDot={{ r: 6, fill: "#4f46e5" }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-            <div className="glass rounded-2xl p-6">
-              <h3 className="font-semibold text-gray-900 mb-6">Distribución del Gasto por Miembro</h3>
-              {distributionByMember.length <= 1 ? (
-                <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-                  <p className="text-sm text-gray-400 font-medium">Sin suficientes datos</p>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie data={distributionByMember} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110} paddingAngle={4} label={(d) => d.name} labelLine={false}>
-                      {distributionByMember.map((d, i) => <Cell key={i} fill={d.fill} stroke="rgba(255,255,255,0.5)" strokeWidth={2}/>)}
-                    </Pie>
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,0.1)' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </div>
-
-          <div className="glass rounded-2xl p-6">
-            <h3 className="font-semibold text-gray-900 mb-6">Historial consolidado (últimos 15)</h3>
-            {recent.length === 0 ? (
-               <div className="py-12 flex flex-col items-center justify-center bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-                 <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-sm mb-3">
-                   <Wallet className="w-6 h-6 text-gray-300" />
-                 </div>
-                 <p className="text-sm font-medium text-gray-600">Sin registros aún</p>
-               </div>
-            ) : (
-              <div className="space-y-3">
-                {recent.map((e) => {
-                  const p = allFamilyProfiles.find((x) => x.id === e.userId);
-                  return (
-                    <div key={e.id} className="flex items-center gap-4 p-4 rounded-xl bg-white border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-200">
-                      <div className="h-10 w-10 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm" style={{ background: p?.color || "#ccc" }}>
-                        {p?.name[0]?.toUpperCase() || "?"}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-800 truncate text-sm">{e.description}</p>
-                        <p className="text-xs font-medium text-gray-500 mt-0.5">{p?.name || "—"} <span className="mx-1.5 opacity-50">•</span> {e.category} <span className="mx-1.5 opacity-50">•</span> {format(parseISO(e.date), "d MMM", { locale: es })}</p>
-                      </div>
-                      <p className="font-bold text-gray-900 tracking-tight">{formatCurrency(e.amount)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </>
+      {editingExpense && (
+        <ExpenseForm open onOpenChange={o => !o && setEditingExpense(null)} initial={editingExpense}
+          onSubmit={async d => { if (editingExpense) { await updateExpense(editingExpense.id, d); toast.success("Actualizado"); setEditingExpense(null); } }}
+        />
       )}
     </Layout>
   );

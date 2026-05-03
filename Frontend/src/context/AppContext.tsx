@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { Profile, Family, FamilyMember, Expense, Notification } from "@/types";
 import * as api from "@/lib/api";
 
+// Re-export so consumers can call without importing api directly
+export { api };
+
 interface Ctx {
   profile: Profile | null;
   family: Family | null;
@@ -20,6 +23,8 @@ interface Ctx {
   addExpense: (e: Omit<Expense, "id" | "userId" | "createdAt">) => Promise<void>;
   updateExpense: (id: string, data: Partial<Omit<Expense, "id" | "userId" | "createdAt">>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
+  updateMemberIncome: (userId: string, monthlyIncome: number) => Promise<void>;
+  leaderDeleteExpense: (id: string) => Promise<void>;
   readNotification: (id: string) => Promise<void>;
   refreshAll: () => Promise<void>;
 }
@@ -169,6 +174,16 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     setNotifications((prev) => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
   };
 
+  const updateMemberIncome: Ctx["updateMemberIncome"] = async (userId, monthlyIncome) => {
+    await api.apiUpdateMemberIncome(userId, monthlyIncome);
+    setFamilyMembers((prev) => prev.map(m => m.userId === userId ? { ...m, monthlyIncome } : m));
+  };
+
+  const leaderDeleteExpense: Ctx["leaderDeleteExpense"] = async (id) => {
+    await api.apiLeaderDeleteExpense(id);
+    setExpenses((prev) => prev.filter((x) => x.id !== id));
+  };
+
   return (
     <AppCtx.Provider
       value={{
@@ -189,6 +204,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         addExpense,
         updateExpense,
         deleteExpense,
+        updateMemberIncome,
+        leaderDeleteExpense,
         readNotification,
         refreshAll
       }}

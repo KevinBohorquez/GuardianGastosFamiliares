@@ -33,7 +33,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/dashboard" element={<AppRoute><Dashboard /></AppRoute>} />
-            <Route path="/family-overview" element={<AppRoute><FamilyOverview /></AppRoute>} />
+            <Route path="/family" element={<AppRoute><FamilyOverview /></AppRoute>} />
             <Route path="/history" element={<AppRoute><History /></AppRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
