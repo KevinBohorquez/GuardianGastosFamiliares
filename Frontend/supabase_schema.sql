@@ -208,6 +208,10 @@ create policy "expenses_update" on public.expenses for update using (user_id = a
 create policy "expenses_delete" on public.expenses for delete using (user_id = auth.uid());
 
 -- NOTIFICATIONS
+-- El usuario solo ve y gestiona sus propias notificaciones
 create policy "notifications_read" on public.notifications for select using (user_id = auth.uid());
+-- INSERT: solo security definer functions (triggers) pueden insertar, pero necesitamos permitir inserts admin
+-- Usamos service_role para inserts desde backend; el trigger usa security definer
+create policy "notifications_insert" on public.notifications for insert with check (true);
 create policy "notifications_update" on public.notifications for update using (user_id = auth.uid());
 create policy "notifications_delete" on public.notifications for delete using (user_id = auth.uid());

@@ -128,7 +128,7 @@ familyRouter.post("/invite", async (req: AuthedRequest, res) => {
 
   if (inviteErr) return res.status(400).json({ error: inviteErr.message });
 
-  await req.supabase!
+  await supabaseAdmin
     .from("notifications")
     .insert({
       user_id: targetUser.id,
