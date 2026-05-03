@@ -55,6 +55,9 @@ export const apiUpdateProfile = (data: Partial<{ name: string; monthlyIncome: nu
 export const apiGetFamily = () =>
   request<Family | null>("/api/family/me");
 
+export const apiGetMemberFamilies = () =>
+  request<Family[]>("/api/family/memberships");
+
 export const apiCreateFamily = (familyName: string) =>
   request<Family>("/api/family", { method: "POST", body: JSON.stringify({ familyName }) });
 

@@ -7,8 +7,9 @@ export { api };
 
 interface Ctx {
   profile: Profile | null;
-  family: Family | null;
-  familyMembers: FamilyMember[];
+  family: Family | null;           // familia donde soy LÍDER
+  memberFamilies: Family[];        // familias donde soy MIEMBRO (no líder)
+  familyMembers: FamilyMember[];   // miembros de MI familia (como líder)
   expenses: Expense[];
   notifications: Notification[];
   loading: boolean;
@@ -34,6 +35,7 @@ const AppCtx = createContext<Ctx | null>(null);
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [family, setFamily] = useState<Family | null>(null);
+  const [memberFamilies, setMemberFamilies] = useState<Family[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -41,18 +43,21 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const refreshAll = useCallback(async () => {
     try {
-      const [p, f, e, n] = await Promise.all([
+      const [p, f, mf, e, n] = await Promise.all([
         api.apiGetProfile(),
         api.apiGetFamily(),
+        api.apiGetMemberFamilies(),
         api.apiListExpenses(),
         api.apiListNotifications(),
       ]);
       setProfile(p);
       setFamily(f);
+      setMemberFamilies(mf);
       setExpenses(e);
       setNotifications(n);
 
-      if (f) {
+      // Cargar miembros si soy líder
+      if (f && f.role === "leader") {
         const fm = await api.apiListFamilyMembers();
         setFamilyMembers(fm);
       } else {
@@ -197,6 +202,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       value={{
         profile,
         family,
+        memberFamilies,
         familyMembers,
         expenses,
         notifications,

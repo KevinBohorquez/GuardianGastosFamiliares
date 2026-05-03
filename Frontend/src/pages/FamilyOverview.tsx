@@ -74,7 +74,7 @@ const MemberCard = ({
 
 // ── Main page ──────────────────────────────────────────────────────────
 const FamilyOverview = () => {
-  const { profile, family, familyMembers, expenses, createFamily, inviteMember, rejectOrRemoveMember, updateMemberIncome, leaderDeleteExpense, deleteExpense, updateExpense, refreshAll } = useApp();
+  const { profile, family, memberFamilies, familyMembers, expenses, createFamily, inviteMember, rejectOrRemoveMember, updateMemberIncome, leaderDeleteExpense, deleteExpense, updateExpense, refreshAll } = useApp();
   const navigate = useNavigate();
 
   const [newFamilyName, setNewFamilyName] = useState("");
@@ -86,16 +86,20 @@ const FamilyOverview = () => {
   const [inviteResult, setInviteResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [inviting, setInviting] = useState(false);
 
-  const isLeader = family?.leader_id === profile?.id;
+  const isLeader = !!family; // family en contexto = familia donde soy líder
+  // allProfiles incluye al líder + miembros aceptados (con sus nombres del backend)
   const acceptedMembers = familyMembers.filter(m => m.status === "accepted");
   const allProfiles = profile
     ? [{ id: profile.id, name: profile.name, color: profile.color, monthlyIncome: profile.monthlyIncome, isMe: true },
-       ...acceptedMembers.map(m => ({ id: m.userId, name: m.name || "Desconocido", color: m.color || "#ccc", monthlyIncome: m.monthlyIncome || 0, isMe: false }))]
+       ...acceptedMembers.map(m => ({ id: m.userId, name: m.name || "Desconocido", color: m.color || "hsl(270 85% 60%)", monthlyIncome: m.monthlyIncome || 0, isMe: false }))]
     : [];
 
+  // Mapa rápido para lookup por userId → nombre
+  const profileNameMap = Object.fromEntries(allProfiles.map(p => [p.id, p.name]));
+  const profileColorMap = Object.fromEntries(allProfiles.map(p => [p.id, p.color]));
+
   const monthStart = startOfMonth(new Date());
-  const familyExpenses = expenses;
-  const monthly = familyExpenses.filter(e => parseISO(e.date) >= monthStart);
+  const monthly = expenses.filter(e => parseISO(e.date) >= monthStart);
   const myMonthly = monthly.filter(e => e.userId === profile?.id);
 
   const totalIncome = isLeader ? allProfiles.reduce((s, p) => s + p.monthlyIncome, 0) : profile?.monthlyIncome || 0;
@@ -167,8 +171,8 @@ const FamilyOverview = () => {
 
   if (!profile) return null;
 
-  // ── No family: create screen ─────────────────────────────────────────
-  if (!family) {
+  // ── No family as leader AND no member families: create screen ────────
+  if (!family && memberFamilies.length === 0) {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -193,28 +197,62 @@ const FamilyOverview = () => {
     );
   }
 
-  // ── Member view (not leader) ─────────────────────────────────────────
+  // ── Solo miembro (no líder): vista de familias donde participa ────────
   if (!isLeader) {
     return (
       <Layout>
         <div className="mb-8">
-          <p className="text-gray-500 font-medium">Mi familia</p>
-          <h1 className="text-4xl font-bold text-gray-900">Familia {family.family_name}</h1>
-          <span className="inline-block mt-2 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-100 text-emerald-700">Miembro</span>
+          <p className="text-gray-500 font-medium">Mis grupos familiares</p>
+          <h1 className="text-4xl font-bold text-gray-900">Mi Familia</h1>
         </div>
-        <div className="glass rounded-3xl p-10 max-w-xl mx-auto text-center border border-indigo-50 shadow-lg">
-          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <ShieldAlert className="w-10 h-10 text-indigo-400" />
+
+        {/* Opción de crear su propia familia */}
+        {!family && (
+          <div className="glass rounded-2xl p-6 mb-6 border border-indigo-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-900">Crea tu propia familia</h3>
+                <p className="text-sm text-gray-500 mt-1">Puedes ser líder de tu familia e invitar a otros, mientras participas en otras familias.</p>
+              </div>
+              <Button onClick={() => {}} className="shrink-0 bg-primary text-white">
+                <Plus className="w-4 h-4 mr-2" /> Crear
+              </Button>
+            </div>
+            <form onSubmit={handleCreateFamily} className="mt-4 flex gap-2">
+              <Input value={newFamilyName} onChange={e => setNewFamilyName(e.target.value)} placeholder="Nombre de tu familia..." className="flex-1" />
+              <Button type="submit" disabled={!newFamilyName.trim()}>Crear</Button>
+            </form>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-3">Vista consolidada privada</h2>
-          <p className="text-gray-500 mb-8 leading-relaxed text-sm">Solo el líder puede ver el dashboard familiar para proteger la privacidad financiera de los miembros. Tus datos personales están disponibles en tu Dashboard.</p>
-          <Button variant="destructive" onClick={async () => {
-            if (!window.confirm("¿Seguro que quieres abandonar esta familia?")) return;
-            const myMem = familyMembers.find(m => m.userId === profile.id);
-            if (myMem) { await rejectOrRemoveMember(myMem.id); toast.success("Saliste de la familia"); }
-          }}>
-            Abandonar familia
-          </Button>
+        )}
+
+        {/* Familias donde es miembro */}
+        <div className="space-y-4">
+          {memberFamilies.map((mf: any) => (
+            <div key={mf.id} className="glass rounded-2xl p-6 border border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center">
+                  <Users className="w-6 h-6 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-lg">{mf.family_name}</p>
+                  <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">Miembro</span>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={async () => {
+                  if (!window.confirm(`¿Abandonar la familia "${mf.family_name}"?`)) return;
+                  await rejectOrRemoveMember(mf.membershipId);
+                  await refreshAll();
+                  toast.success("Saliste de la familia");
+                }}
+              >
+                Abandonar
+              </Button>
+            </div>
+          ))}
         </div>
       </Layout>
     );
@@ -358,14 +396,18 @@ const FamilyOverview = () => {
           ? <div className="py-12 flex flex-col items-center gap-2 text-gray-400 border-2 border-dashed border-gray-100 rounded-xl"><Wallet className="w-8 h-8 opacity-50" /><p className="text-sm">Sin registros</p></div>
           : <div className="space-y-3">
               {recentExpenses.map(e => {
-                const owner = allProfiles.find(p => p.id === e.userId);
+                const ownerName = profileNameMap[e.userId] || "Desconocido";
+                const ownerColor = profileColorMap[e.userId] || "hsl(270 85% 60%)";
                 const isMine = e.userId === profile.id;
                 return (
                   <div key={e.id} className="flex items-center gap-3 p-4 rounded-xl bg-white border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group">
                     <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white text-sm font-bold" style={{ background: CATEGORY_COLORS[e.category] }}>{e.category[0]}</div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-800 text-sm truncate">{e.description}</p>
-                      <p className="text-xs text-gray-500">{owner?.name || "—"} · {e.category} · {format(parseISO(e.date), "d MMM", { locale: es })}</p>
+                      <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0" style={{ background: ownerColor }}>{ownerName[0]?.toUpperCase()}</span>
+                        {ownerName} · {e.category} · {format(parseISO(e.date), "d MMM", { locale: es })}
+                      </p>
                     </div>
                     <p className="font-bold text-gray-900">{formatCurrency(e.amount)}</p>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
