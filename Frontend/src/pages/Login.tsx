@@ -43,8 +43,8 @@ const Login = () => {
         </div>
         <form onSubmit={submit} className="glass-strong rounded-3xl p-8 space-y-5" autoComplete="off">
           <div className="space-y-2">
-            <Label>Correo familiar</Label>
-            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="familia@correo.com" autoComplete="off" />
+            <Label>Correo electrónico</Label>
+            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com" autoComplete="off" />
           </div>
           <div className="space-y-2">
             <Label>Contraseña</Label>

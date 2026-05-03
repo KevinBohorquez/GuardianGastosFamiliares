@@ -4,14 +4,14 @@
 -- ==========================================================
 
 -- Limpieza de esquema anterior (opcional si es entorno de desarrollo limpio)
--- drop table if exists public.notifications cascade;
--- drop table if exists public.expenses cascade;
--- drop table if exists public.family_members cascade;
--- drop table if exists public.families cascade;
--- drop table if exists public.profiles cascade;
--- drop type if exists public.expense_category cascade;
--- drop type if exists public.family_member_status cascade;
--- drop type if exists public.notification_type cascade;
+drop table if exists public.notifications cascade;
+drop table if exists public.expenses cascade;
+drop table if exists public.family_members cascade;
+drop table if exists public.families cascade;
+drop table if exists public.profiles cascade;
+drop type if exists public.expense_category cascade;
+drop type if exists public.family_member_status cascade;
+drop type if exists public.notification_type cascade;
 
 -- 1) Tipos
 do $$ begin
