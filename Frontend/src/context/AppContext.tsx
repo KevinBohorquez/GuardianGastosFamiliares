@@ -67,19 +67,27 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     (async () => {
       const token = api.getToken();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-      try {
-        await refreshAll();
-      } catch {
-        api.setToken(null);
-      } finally {
-        setLoading(false);
-      }
+      if (!token) { setLoading(false); return; }
+      try { await refreshAll(); } catch { api.setToken(null); } finally { setLoading(false); }
     })();
   }, [refreshAll]);
+
+  // Polling de notificaciones cada 30s + refresh al recuperar foco
+  useEffect(() => {
+    const refreshNotifs = async () => {
+      const token = api.getToken();
+      if (!token) return;
+      try {
+        const n = await api.apiListNotifications();
+        setNotifications(n);
+      } catch {}
+    };
+
+    const interval = setInterval(refreshNotifs, 30_000);
+    const onFocus = () => refreshNotifs();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(interval); window.removeEventListener("focus", onFocus); };
+  }, []);
 
   const signup: Ctx["signup"] = async (name, email, password) => {
     try {

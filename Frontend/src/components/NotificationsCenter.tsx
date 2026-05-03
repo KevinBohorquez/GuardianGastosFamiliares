@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
-import { Bell, Check, X, AlertTriangle, Users, MailOpen } from "lucide-react";
+import { Bell, Check, X, AlertTriangle, Users, MailOpen, RefreshCw } from "lucide-react";
 import { Button } from "./ui/button";
 import { formatDistanceToNow, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
 
 export const NotificationsCenter = () => {
-  const { notifications, readNotification, acceptInvite, rejectOrRemoveMember } = useApp();
+  const { notifications, readNotification, acceptInvite, rejectOrRemoveMember, refreshAll } = useApp();
   const [open, setOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const unread = notifications.filter(n => !n.isRead).length;
@@ -78,14 +79,23 @@ export const NotificationsCenter = () => {
                 <p className="text-xs text-indigo-600 font-medium mt-0.5">{unread} sin leer</p>
               )}
             </div>
-            {unread > 0 && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => notifications.filter(n => !n.isRead).forEach(n => readNotification(n.id))}
-                className="text-xs text-gray-500 hover:text-indigo-600 font-medium transition-colors"
+                onClick={async () => { setRefreshing(true); await refreshAll(); setRefreshing(false); }}
+                className="text-gray-400 hover:text-indigo-600 transition-colors p-1 rounded-lg hover:bg-indigo-50"
+                title="Actualizar"
               >
-                Marcar todas
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
-            )}
+              {unread > 0 && (
+                <button
+                  onClick={() => notifications.filter(n => !n.isRead).forEach(n => readNotification(n.id))}
+                  className="text-xs text-gray-500 hover:text-indigo-600 font-medium transition-colors"
+                >
+                  Marcar todas
+                </button>
+              )}
+            </div>
           </div>
 
           {/* List */}

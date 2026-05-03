@@ -44,14 +44,14 @@ create table if not exists public.families (
   created_at timestamptz not null default now()
 );
 
--- 4) Miembros de Familias (Relación y estado de invitaciones)
+-- 4) Miembros de Familias
 create table if not exists public.family_members (
   id uuid primary key default gen_random_uuid(),
   family_id uuid not null references public.families(id) on delete cascade,
-  user_id uuid not null unique references auth.users(id) on delete cascade, -- un usuario solo puede pertenecer a una familia (RNF-06)
+  user_id uuid not null references auth.users(id) on delete cascade, -- un usuario puede ser miembro de varias familias, pero solo líder de una
   status public.family_member_status not null default 'pending',
   created_at timestamptz not null default now(),
-  unique (family_id, user_id)
+  unique (family_id, user_id) -- no puede haber duplicados en la misma familia
 );
 
 -- 5) Gastos Individuales
@@ -181,7 +181,7 @@ create policy "families_insert" on public.families for insert with check (leader
 create policy "families_delete" on public.families for delete using (leader_id = auth.uid());
 
 -- FAMILY MEMBERS (Invitaciones)
--- Puedo ver las invitaciones si soy el líder que invitó o si soy el usuario invitado
+-- Puedo ver mis invitaciones (de cualquier estado) y las de mi familia si soy líder
 create policy "family_members_read" on public.family_members for select using (
   user_id = auth.uid() or public.is_leader_of_family(family_id)
 );
