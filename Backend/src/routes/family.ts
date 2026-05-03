@@ -68,9 +68,33 @@ familyRouter.post("/", async (req: AuthedRequest, res) => {
 
 // GET /api/family/members
 familyRouter.get("/members", async (req: AuthedRequest, res) => {
-  const { data, error } = await req.supabase!
+  // Primero obtenemos el family_id de la familia del líder (o donde el usuario es miembro)
+  const { data: family } = await req.supabase!
+    .from("families")
+    .select("id")
+    .eq("leader_id", req.user!.id)
+    .maybeSingle();
+
+  let familyId = family?.id;
+
+  // Si no es líder, buscar la familia donde es miembro aceptado
+  if (!familyId) {
+    const { data: mem } = await req.supabase!
+      .from("family_members")
+      .select("family_id")
+      .eq("user_id", req.user!.id)
+      .eq("status", "accepted")
+      .maybeSingle();
+    familyId = mem?.family_id;
+  }
+
+  if (!familyId) return res.json([]);
+
+  // Usar supabaseAdmin para saltarnos RLS en profiles (el líder debe ver todos los miembros)
+  const { data, error } = await supabaseAdmin
     .from("family_members")
-    .select(`id, user_id, status, created_at, profiles ( name, color, monthly_income )`);
+    .select(`id, user_id, status, created_at, profiles ( name, color, monthly_income )`)
+    .eq("family_id", familyId);
 
   if (error) return res.status(500).json({ error: error.message });
 

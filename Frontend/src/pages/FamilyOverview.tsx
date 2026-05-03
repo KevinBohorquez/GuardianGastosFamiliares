@@ -83,6 +83,8 @@ const FamilyOverview = () => {
   const [showMembers, setShowMembers] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [activeTab, setActiveTab] = useState<"family" | "personal">("family");
+  const [inviteResult, setInviteResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [inviting, setInviting] = useState(false);
 
   const isLeader = family?.leader_id === profile?.id;
   const acceptedMembers = familyMembers.filter(m => m.status === "accepted");
@@ -112,11 +114,24 @@ const FamilyOverview = () => {
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (emailStatus === "notfound") return toast.error("Ese correo no está registrado en el sistema.");
+    if (emailStatus === "notfound") {
+      setInviteResult({ ok: false, message: "No existe ningún usuario registrado con ese correo." });
+      setTimeout(() => setInviteResult(null), 4000);
+      return;
+    }
     if (!inviteEmail.trim()) return;
+    setInviting(true);
+    setInviteResult(null);
     const r = await inviteMember(inviteEmail);
-    if (r.ok) { toast.success("Invitación enviada"); setInviteEmail(""); setEmailStatus("idle"); }
-    else toast.error(r.error);
+    setInviting(false);
+    if (r.ok) {
+      setInviteResult({ ok: true, message: `¡Invitación enviada a ${inviteEmail}!` });
+      setInviteEmail("");
+      setEmailStatus("idle");
+    } else {
+      setInviteResult({ ok: false, message: r.error || "Error al enviar la invitación." });
+    }
+    setTimeout(() => setInviteResult(null), 5000);
   };
 
   const handleCreateFamily = async (e: React.FormEvent) => {
@@ -234,16 +249,36 @@ const FamilyOverview = () => {
               {emailStatus === "found" && <Check className="w-3 h-3 text-emerald-500 absolute right-2 top-1/2 -translate-y-1/2" />}
               {emailStatus === "notfound" && <X className="w-3 h-3 text-red-500 absolute right-2 top-1/2 -translate-y-1/2" />}
             </div>
-            <Button type="submit" size="sm" disabled={emailStatus === "notfound" || emailStatus === "checking"} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg h-9 px-4">
-              Invitar
+            <Button type="submit" size="sm" disabled={emailStatus === "notfound" || emailStatus === "checking" || inviting} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg h-9 px-4">
+              {inviting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Invitar"}
             </Button>
           </form>
         </div>
       </div>
 
-      {/* Email feedback */}
-      {emailStatus === "found" && <p className="text-xs text-emerald-600 font-medium mb-4">✓ Correo registrado — puedes enviar la invitación</p>}
-      {emailStatus === "notfound" && <p className="text-xs text-red-500 font-medium mb-4">✗ No hay ningún usuario registrado con ese correo</p>}
+      {/* Email feedback banner */}
+      {inviteResult && (
+        <div className={`mb-6 flex items-start gap-3 p-4 rounded-2xl border animate-in fade-in slide-in-from-top-2 ${
+          inviteResult.ok
+            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+            : "bg-red-50 border-red-200 text-red-800"
+        }`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+            inviteResult.ok ? "bg-emerald-100" : "bg-red-100"
+          }`}>
+            {inviteResult.ok
+              ? <Check className="w-4 h-4 text-emerald-600" />
+              : <X className="w-4 h-4 text-red-600" />}
+          </div>
+          <div>
+            <p className="font-semibold text-sm">{inviteResult.ok ? "Invitación enviada" : "No se pudo enviar"}</p>
+            <p className="text-xs mt-0.5 opacity-80">{inviteResult.message}</p>
+          </div>
+          <button onClick={() => setInviteResult(null)} className="ml-auto opacity-50 hover:opacity-100 transition-opacity">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Tab: Personal / Familiar */}
       <div className="flex gap-2 mb-8 bg-gray-100/60 p-1 rounded-xl w-fit">

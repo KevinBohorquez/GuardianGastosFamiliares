@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
-import { Bell, Check, X, AlertTriangle, Users, MailOpen, RefreshCw } from "lucide-react";
+import { Bell, Check, X, AlertTriangle, Users, MailOpen, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { formatDistanceToNow, parseISO, format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -9,11 +9,12 @@ export const NotificationsCenter = () => {
   const { notifications, readNotification, acceptInvite, rejectOrRemoveMember, refreshAll } = useApp();
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Track optimistic states per notification id
+  const [pending, setPending] = useState<Record<string, "accepting" | "rejecting" | "accepted" | "rejected">>({});
   const ref = useRef<HTMLDivElement>(null);
 
   const unread = notifications.filter(n => !n.isRead).length;
 
-  // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -23,29 +24,37 @@ export const NotificationsCenter = () => {
   }, []);
 
   const handleAcceptInvite = async (n: any) => {
+    setPending(p => ({ ...p, [n.id]: "accepting" }));
     try {
       await acceptInvite(n.relatedEntityId);
+      setPending(p => ({ ...p, [n.id]: "accepted" }));
       await readNotification(n.id);
+      // Refresh en background sin bloquear UI
+      refreshAll();
     } catch (e: any) {
-      console.error(e);
+      setPending(p => { const next = { ...p }; delete next[n.id]; return next; });
     }
   };
 
   const handleRejectInvite = async (n: any) => {
+    setPending(p => ({ ...p, [n.id]: "rejecting" }));
     try {
       await rejectOrRemoveMember(n.relatedEntityId);
+      setPending(p => ({ ...p, [n.id]: "rejected" }));
       await readNotification(n.id);
+      refreshAll();
     } catch (e: any) {
-      console.error(e);
+      setPending(p => { const next = { ...p }; delete next[n.id]; return next; });
     }
   };
 
   const formatDate = (iso: string) => {
     try {
       const date = parseISO(iso);
-      const relative = formatDistanceToNow(date, { addSuffix: true, locale: es });
-      const absolute = format(date, "d 'de' MMMM 'a las' HH:mm", { locale: es });
-      return { relative, absolute };
+      return {
+        relative: formatDistanceToNow(date, { addSuffix: true, locale: es }),
+        absolute: format(date, "d 'de' MMMM 'a las' HH:mm", { locale: es }),
+      };
     } catch {
       return { relative: "hace un momento", absolute: "" };
     }
@@ -70,22 +79,20 @@ export const NotificationsCenter = () => {
       {open && (
         <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden"
           style={{ animation: "fadeSlideIn 0.15s ease-out" }}>
-          
+
           {/* Header */}
           <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center bg-gradient-to-r from-indigo-50/50 to-purple-50/50">
             <div>
               <h3 className="font-bold text-gray-900 text-base">Notificaciones</h3>
-              {unread > 0 && (
-                <p className="text-xs text-indigo-600 font-medium mt-0.5">{unread} sin leer</p>
-              )}
+              {unread > 0 && <p className="text-xs text-indigo-600 font-medium mt-0.5">{unread} sin leer</p>}
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={async () => { setRefreshing(true); await refreshAll(); setRefreshing(false); }}
-                className="text-gray-400 hover:text-indigo-600 transition-colors p-1 rounded-lg hover:bg-indigo-50"
+                className="text-gray-400 hover:text-indigo-600 transition-colors p-1.5 rounded-lg hover:bg-indigo-50"
                 title="Actualizar"
               >
-                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
               </button>
               {unread > 0 && (
                 <button
@@ -114,40 +121,44 @@ export const NotificationsCenter = () => {
                   const { relative, absolute } = formatDate(n.createdAt);
                   const isInvite = n.type === "family_invite";
                   const isAlert = n.type === "expense_alert";
+                  const state = pending[n.id];
 
                   return (
                     <div
                       key={n.id}
-                      className={`px-5 py-4 border-b border-gray-50 last:border-0 transition-colors ${n.isRead ? 'bg-white' : 'bg-indigo-50/30'}`}
+                      className={`px-5 py-4 border-b border-gray-50 last:border-0 transition-colors ${n.isRead && !state ? "bg-white" : "bg-indigo-50/30"}`}
                     >
                       <div className="flex gap-3">
                         {/* Icon */}
                         <div className={`mt-0.5 w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                          isAlert
-                            ? 'bg-red-100'
-                            : 'bg-indigo-100'
+                          state === "accepted" ? "bg-emerald-100" :
+                          state === "rejected" ? "bg-gray-100" :
+                          isAlert ? "bg-red-100" : "bg-indigo-100"
                         }`}>
-                          {isAlert
-                            ? <AlertTriangle className="w-5 h-5 text-red-600" />
-                            : <Users className="w-5 h-5 text-indigo-600" />
-                          }
+                          {state === "accepted" ? <Check className="w-5 h-5 text-emerald-600" /> :
+                           state === "rejected" ? <X className="w-5 h-5 text-gray-500" /> :
+                           isAlert ? <AlertTriangle className="w-5 h-5 text-red-600" /> :
+                           <Users className="w-5 h-5 text-indigo-600" />}
                         </div>
 
-                        {/* Content */}
                         <div className="flex-1 min-w-0">
                           {/* Badge */}
                           <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md mb-1.5 ${
-                            isAlert ? 'bg-red-100 text-red-700' : 'bg-indigo-100 text-indigo-700'
+                            state === "accepted" ? "bg-emerald-100 text-emerald-700" :
+                            state === "rejected" ? "bg-gray-100 text-gray-600" :
+                            isAlert ? "bg-red-100 text-red-700" : "bg-indigo-100 text-indigo-700"
                           }`}>
-                            {isAlert ? "Alerta de presupuesto" : "Invitación familiar"}
+                            {state === "accepted" ? "✓ Invitación aceptada" :
+                             state === "rejected" ? "✗ Invitación rechazada" :
+                             isAlert ? "Alerta de presupuesto" : "Invitación familiar"}
                           </span>
 
-                          <p className={`text-sm leading-snug ${!n.isRead ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
+                          <p className={`text-sm leading-snug ${!n.isRead && !state ? "font-medium text-gray-900" : "text-gray-600"}`}>
                             {n.message}
                           </p>
 
                           {/* Timestamp */}
-                          <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                          <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1 flex-wrap">
                             <span>{relative}</span>
                             {absolute && (
                               <>
@@ -157,8 +168,8 @@ export const NotificationsCenter = () => {
                             )}
                           </p>
 
-                          {/* Actions */}
-                          {isInvite && !n.isRead && (
+                          {/* Invite actions */}
+                          {isInvite && !n.isRead && !state && (
                             <div className="flex gap-2 mt-3">
                               <Button
                                 size="sm"
@@ -178,6 +189,26 @@ export const NotificationsCenter = () => {
                             </div>
                           )}
 
+                          {/* Loading state */}
+                          {(state === "accepting" || state === "rejecting") && (
+                            <div className="flex items-center gap-1.5 mt-3 text-xs text-gray-500">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              {state === "accepting" ? "Aceptando invitación..." : "Rechazando invitación..."}
+                            </div>
+                          )}
+
+                          {/* Result state */}
+                          {state === "accepted" && (
+                            <p className="mt-2 text-xs font-semibold text-emerald-600 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> ¡Te has unido a la familia!
+                            </p>
+                          )}
+                          {state === "rejected" && (
+                            <p className="mt-2 text-xs font-medium text-gray-500 flex items-center gap-1">
+                              <X className="w-3 h-3" /> Invitación rechazada
+                            </p>
+                          )}
+
                           {isAlert && !n.isRead && (
                             <button
                               onClick={() => readNotification(n.id)}
@@ -188,8 +219,7 @@ export const NotificationsCenter = () => {
                           )}
                         </div>
 
-                        {/* Unread dot */}
-                        {!n.isRead && (
+                        {!n.isRead && !state && (
                           <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
                         )}
                       </div>
