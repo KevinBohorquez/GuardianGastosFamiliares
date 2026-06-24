@@ -14,6 +14,16 @@ const CATEGORIES = [
   "Otros",
 ] as const;
 
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+const rejectFutureDate = (date: string, res: any) => {
+  if (date.slice(0, 10) > todayStr()) {
+    res.status(400).json({ error: "No se permiten fechas futuras." });
+    return true;
+  }
+  return false;
+};
+
 const mapRow = (r: any) => ({
   id: r.id,
   userId: r.user_id,
@@ -94,6 +104,7 @@ const CreateSchema = z.object({
 expensesRouter.post("/", async (req: AuthedRequest, res) => {
   const p = CreateSchema.safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: p.error.flatten().fieldErrors });
+  if (rejectFutureDate(p.data.date, res)) return;
 
   // Por RLS, un usuario solo puede insertar gastos para sí mismo (user_id = auth.uid())
   const { data, error } = await req.supabase!
@@ -122,6 +133,7 @@ const UpdateSchema = z.object({
 expensesRouter.patch("/:id", async (req: AuthedRequest, res) => {
   const p = UpdateSchema.safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: p.error.flatten().fieldErrors });
+  if (p.data.date && rejectFutureDate(p.data.date, res)) return;
   const patch: Record<string, unknown> = { ...p.data };
   if (typeof patch.date === "string") patch.date = (patch.date as string).slice(0, 10);
 

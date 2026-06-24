@@ -143,7 +143,7 @@ familyRouter.post("/invite", async (req: AuthedRequest, res) => {
   const { data: usersData, error: usersErr } = await supabaseAdmin.auth.admin.listUsers();
   if (usersErr) return res.status(500).json({ error: "Error interno al buscar usuario." });
 
-  const targetUser = usersData.users.find((u) => u.email === p.data.email);
+  const targetUser = usersData.users.find((u) => u.email?.toLowerCase() === p.data.email.toLowerCase());
   if (!targetUser) return res.status(404).json({ error: "No existe ningún usuario registrado con ese correo." });
   if (targetUser.id === req.user!.id) return res.status(400).json({ error: "No puedes invitarte a ti mismo." });
 
@@ -181,22 +181,52 @@ familyRouter.post("/invite", async (req: AuthedRequest, res) => {
 
 // PATCH /api/family/invite/:id/accept
 familyRouter.patch("/invite/:id/accept", async (req: AuthedRequest, res) => {
+  const { data: invite } = await supabaseAdmin
+    .from("family_members")
+    .select("id, status")
+    .eq("id", req.params.id)
+    .eq("user_id", req.user!.id)
+    .maybeSingle();
+
+  if (!invite) return res.status(404).json({ error: "Invitación no encontrada." });
+  if (invite.status === "accepted") return res.status(400).json({ error: "Esta invitación ya fue aceptada." });
+  if (invite.status !== "pending") return res.status(400).json({ error: "Esta invitación ya no está pendiente." });
+
   const { error } = await supabaseAdmin
     .from("family_members")
     .update({ status: "accepted" })
     .eq("id", req.params.id)
     .eq("user_id", req.user!.id);
   if (error) return res.status(400).json({ error: error.message });
+
+  await supabaseAdmin.from("notifications").delete().eq("related_entity_id", req.params.id);
   res.json({ ok: true });
 });
 
 // DELETE /api/family/invite/:id — Rechazar / eliminar miembro
 familyRouter.delete("/invite/:id", async (req: AuthedRequest, res) => {
-  const { error } = await supabaseAdmin
+  const { data: membership } = await supabaseAdmin
     .from("family_members")
-    .delete()
-    .eq("id", req.params.id);
+    .select("id, user_id, family_id, status")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (!membership) return res.status(404).json({ error: "Membresía no encontrada." });
+
+  const { data: leaderFamily } = await req.supabase!
+    .from("families").select("id").eq("leader_id", req.user!.id).maybeSingle();
+
+  const isSelfLeaving = membership.user_id === req.user!.id;
+  const isLeaderRemoving = leaderFamily?.id === membership.family_id && membership.user_id !== req.user!.id;
+
+  if (!isSelfLeaving && !isLeaderRemoving) {
+    return res.status(403).json({ error: "No tienes permiso para realizar esta acción." });
+  }
+
+  const { error } = await supabaseAdmin.from("family_members").delete().eq("id", req.params.id);
   if (error) return res.status(400).json({ error: error.message });
+
+  await supabaseAdmin.from("notifications").delete().eq("related_entity_id", req.params.id);
   res.json({ ok: true });
 });
 
