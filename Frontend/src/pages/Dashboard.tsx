@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { CATEGORY_COLORS, CATEGORIES, Category, Expense, formatCurrency } from "@/types";
 import { Plus, Pencil, Trash2, TrendingDown, TrendingUp, Wallet, Settings } from "lucide-react";
 import { ExpenseForm } from "@/components/ExpenseForm";
+import { DeleteExpenseDialog } from "@/components/DeleteExpenseDialog";
 import { toast } from "sonner";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -20,6 +21,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
+  const [deleting, setDeleting] = useState<Expense | null>(null);
   
   // Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -44,6 +46,7 @@ const Dashboard = () => {
   const totalMonth = monthly.reduce((s, e) => s + e.amount, 0);
   const balance = (profile?.monthlyIncome || 0) - totalMonth;
   const usagePct = profile?.monthlyIncome ? Math.min(100, (totalMonth / profile.monthlyIncome) * 100) : 0;
+  const expenseRatio = profile?.monthlyIncome ? (totalMonth / profile.monthlyIncome) * 100 : 0;
 
   const byCategory = useMemo(() => {
     const map = new Map<Category, number>();
@@ -129,7 +132,7 @@ const Dashboard = () => {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="glass rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute -right-4 -top-4 w-24 h-24 bg-primary/5 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out" />
           <div className="flex items-center justify-between mb-2">
@@ -162,6 +165,14 @@ const Dashboard = () => {
             {formatCurrency(balance)}
           </p>
         </div>
+        <div className="glass rounded-2xl p-6 relative overflow-hidden group">
+          <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/5 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out" />
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-600">Ratio de gasto</span>
+            <TrendingDown className="h-5 w-5 text-amber-500" />
+          </div>
+          <p className="text-3xl font-bold text-gray-900">{expenseRatio.toFixed(0)}%</p>
+        </div>
       </div>
 
       {/* Charts */}
@@ -170,7 +181,7 @@ const Dashboard = () => {
           <h3 className="font-semibold text-gray-800 mb-6">Distribución por categoría</h3>
           {byCategory.length === 0 ? (
             <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-              <p className="text-sm text-gray-400 font-medium">Aún sin datos este mes</p>
+              <p className="text-sm text-gray-400 font-medium">Sin datos este mes</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
@@ -190,7 +201,7 @@ const Dashboard = () => {
           <h3 className="font-semibold text-gray-800 mb-6">Tendencia diaria</h3>
           {byDay.length === 0 ? (
             <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-              <p className="text-sm text-gray-400 font-medium">Aún sin datos este mes</p>
+              <p className="text-sm text-gray-400 font-medium">Sin datos este mes</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
@@ -215,7 +226,7 @@ const Dashboard = () => {
           <h3 className="font-semibold text-gray-800 mb-6">Gastos por día de la semana</h3>
           {byWeekDay.length === 0 ? (
              <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-               <p className="text-sm text-gray-400 font-medium">Aún sin datos</p>
+               <p className="text-sm text-gray-400 font-medium">Sin datos este mes</p>
              </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
@@ -237,7 +248,7 @@ const Dashboard = () => {
           <h3 className="font-semibold text-gray-800 mb-6">Top 5 Gastos del mes</h3>
           {top5Expenses.length === 0 ? (
              <div className="h-[260px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
-               <p className="text-sm text-gray-400 font-medium">Aún sin datos</p>
+               <p className="text-sm text-gray-400 font-medium">Sin datos este mes</p>
              </div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
@@ -288,7 +299,7 @@ const Dashboard = () => {
                   <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50" onClick={() => setEditing(e)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50" onClick={() => { deleteExpense(e.id); toast.success("Eliminado"); }}>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50" onClick={() => setDeleting(e)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -306,13 +317,25 @@ const Dashboard = () => {
       <ExpenseForm
         open={adding}
         onOpenChange={setAdding}
-        onSubmit={(d) => { addExpense(d); toast.success("Gasto registrado"); }}
+        onSubmit={async (d) => { await addExpense(d); toast.success("Gasto registrado"); }}
       />
       <ExpenseForm
         open={!!editing}
         onOpenChange={(o) => !o && setEditing(null)}
         initial={editing}
-        onSubmit={(d) => { if (editing) { updateExpense(editing.id, d); toast.success("Actualizado"); } }}
+        onSubmit={async (d) => { if (editing) { await updateExpense(editing.id, d); toast.success("Actualizado"); setEditing(null); } }}
+      />
+      <DeleteExpenseDialog
+        open={!!deleting}
+        description={deleting?.description || ""}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        onConfirm={async () => {
+          if (deleting) {
+            await deleteExpense(deleting.id);
+            toast.success("Eliminado");
+            setDeleting(null);
+          }
+        }}
       />
     </Layout>
   );

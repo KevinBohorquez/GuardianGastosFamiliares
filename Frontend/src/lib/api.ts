@@ -2,14 +2,69 @@ import { Profile, Family, FamilyMember, Expense, Category, Notification } from "
 
 const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 const TOKEN_KEY = "gg_token";
+const REFRESH_TOKEN_KEY = "gg_refresh_token";
 
+// ── Token helpers ───────────────────────────────────────
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
+export const getRefreshToken = () => localStorage.getItem(REFRESH_TOKEN_KEY);
+
 export const setToken = (t: string | null) => {
   if (t) localStorage.setItem(TOKEN_KEY, t);
   else localStorage.removeItem(TOKEN_KEY);
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export const setRefreshToken = (t: string | null) => {
+  if (t) localStorage.setItem(REFRESH_TOKEN_KEY, t);
+  else localStorage.removeItem(REFRESH_TOKEN_KEY);
+};
+
+/** Limpia ambos tokens y dispara un evento para que AppContext redirija al login. */
+export const clearSession = () => {
+  setToken(null);
+  setRefreshToken(null);
+  window.dispatchEvent(new CustomEvent("auth:expired"));
+};
+
+// ── Refresh automático ──────────────────────────────────
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshToken(): Promise<boolean> {
+  // Deduplicar: si ya hay un refresh en curso, esperarlo
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const rt = getRefreshToken();
+    if (!rt) return false;
+
+    try {
+      const res = await fetch(`${BASE}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!res.ok) return false;
+
+      const data = await res.json();
+      if (data.accessToken && data.refreshToken) {
+        setToken(data.accessToken);
+        setRefreshToken(data.refreshToken);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+// ── Request genérico con retry automático tras 401 ──────
+async function request<T>(path: string, init: RequestInit = {}, _isRetry = false): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -18,6 +73,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
+
+  // Si 401 y aún no es retry, intentar refrescar el token
+  if (res.status === 401 && !_isRetry) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      // Reintentar la misma petición con el nuevo token
+      return request<T>(path, init, true);
+    }
+    // No se pudo refrescar → sesión expirada
+    clearSession();
+    throw new Error("Sesión expirada. Por favor, inicia sesión nuevamente.");
+  }
+
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {

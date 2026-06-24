@@ -57,6 +57,20 @@ authRouter.post("/login", async (req, res) => {
   });
 });
 
+authRouter.post("/refresh", async (req, res) => {
+  const { refreshToken } = req.body ?? {};
+  if (!refreshToken) return res.status(400).json({ error: "Falta refreshToken" });
+
+  const { data, error } = await supabaseAnon.auth.refreshSession({ refresh_token: refreshToken });
+  if (error || !data.session) return res.status(401).json({ error: "No se pudo renovar la sesión" });
+
+  res.json({
+    accessToken: data.session.access_token,
+    refreshToken: data.session.refresh_token,
+    user: { id: data.session.user!.id, email: data.session.user!.email },
+  });
+});
+
 authRouter.post("/logout", async (_req, res) => {
   // Stateless JWT: el cliente solo descarta el token.
   res.json({ ok: true });

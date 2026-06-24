@@ -83,6 +83,7 @@ const FamilyOverview = () => {
   const [showMembers, setShowMembers] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [activeTab, setActiveTab] = useState<"family" | "personal">("family");
+  const [familyContext, setFamilyContext] = useState<"leader" | string>("leader");
   const [inviteResult, setInviteResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [inviting, setInviting] = useState(false);
 
@@ -258,9 +259,84 @@ const FamilyOverview = () => {
     );
   }
 
+  // ── Leader viewing another family as member (multi-tenant) ───────────
+  if (isLeader && familyContext !== "leader") {
+    const mf = memberFamilies.find((f) => f.id === familyContext);
+    if (mf) {
+      return (
+        <Layout>
+          <div className="mb-6 flex flex-wrap gap-2">
+            <button
+              onClick={() => setFamilyContext("leader")}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white"
+            >
+              {family?.family_name} (Líder)
+            </button>
+            {memberFamilies.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFamilyContext(f.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  familyContext === f.id ? "bg-white shadow-sm text-indigo-700 border border-indigo-200" : "text-gray-500 hover:text-gray-700 bg-gray-100"
+                }`}
+              >
+                {f.family_name} (Miembro)
+              </button>
+            ))}
+          </div>
+          <div className="glass rounded-2xl p-6 border border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center">
+                <Users className="w-6 h-6 text-indigo-600" />
+              </div>
+              <div>
+                <p className="font-bold text-gray-900 text-lg">{mf.family_name}</p>
+                <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">Miembro</span>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-200 hover:bg-red-50"
+              onClick={async () => {
+                if (!window.confirm(`¿Abandonar la familia "${mf.family_name}"?`)) return;
+                await rejectOrRemoveMember(mf.membershipId!);
+                setFamilyContext("leader");
+                await refreshAll();
+                toast.success("Saliste de la familia");
+              }}
+            >
+              Abandonar
+            </Button>
+          </div>
+        </Layout>
+      );
+    }
+  }
+
   // ── Leader view ──────────────────────────────────────────────────────
   return (
     <Layout>
+      {memberFamilies.length > 0 && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          <button
+            onClick={() => setFamilyContext("leader")}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white shadow-sm"
+          >
+            {family.family_name} (Líder)
+          </button>
+          {memberFamilies.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFamilyContext(f.id)}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all"
+            >
+              {f.family_name} (Miembro)
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
