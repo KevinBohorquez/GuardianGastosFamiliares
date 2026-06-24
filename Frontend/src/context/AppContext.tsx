@@ -41,6 +41,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const resetState = useCallback(() => {
+    setProfile(null);
+    setFamily(null);
+    setMemberFamilies([]);
+    setFamilyMembers([]);
+    setExpenses([]);
+    setNotifications([]);
+  }, []);
+
   const refreshAll = useCallback(async () => {
     try {
       const [p, f, mf, e, n] = await Promise.all([
@@ -63,19 +72,42 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       } else {
         setFamilyMembers([]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error refreshing data", err);
+      // Si el error es de autenticación, el api layer ya limpió los tokens
+      if (!api.getToken()) {
+        resetState();
+      }
+      throw err;
     }
-  }, []);
+  }, [resetState]);
 
   // Hydrate desde token guardado
   useEffect(() => {
     (async () => {
       const token = api.getToken();
       if (!token) { setLoading(false); return; }
-      try { await refreshAll(); } catch { api.setToken(null); } finally { setLoading(false); }
+      try {
+        await refreshAll();
+      } catch {
+        // refreshAll ya maneja la limpieza de sesión internamente
+        api.clearSession();
+        resetState();
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [refreshAll]);
+  }, [refreshAll, resetState]);
+
+  // Escuchar evento de sesión expirada (disparado por api.ts cuando el refresh falla)
+  useEffect(() => {
+    const handleExpired = () => {
+      resetState();
+      setLoading(false);
+    };
+    window.addEventListener("auth:expired", handleExpired);
+    return () => window.removeEventListener("auth:expired", handleExpired);
+  }, [resetState]);
 
   // Polling de notificaciones cada 30s + refresh al recuperar foco
   useEffect(() => {
@@ -98,6 +130,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const res = await api.apiSignup(name, email, password);
       api.setToken(res.accessToken);
+      api.setRefreshToken(res.refreshToken);
       await refreshAll();
       return { ok: true };
     } catch (e: any) {
@@ -109,6 +142,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const res = await api.apiLogin(email, password);
       api.setToken(res.accessToken);
+      api.setRefreshToken(res.refreshToken);
       await refreshAll();
       return { ok: true };
     } catch (e: any) {
@@ -117,12 +151,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = () => {
-    api.setToken(null);
-    setProfile(null);
-    setFamily(null);
-    setFamilyMembers([]);
-    setExpenses([]);
-    setNotifications([]);
+    api.clearSession();
+    resetState();
   };
 
   const updateProfile: Ctx["updateProfile"] = async (data) => {
@@ -155,12 +185,18 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const rejectOrRemoveMember: Ctx["rejectOrRemoveMember"] = async (id) => {
     await api.apiRemoveMemberOrRejectInvite(id);
-    if (familyMembers.some(m => m.id === id && m.userId === profile?.id)) {
-      // Si yo salí de la familia
+    const isLeavingAsMember = memberFamilies.some((f) => f.membershipId === id);
+    if (isLeavingAsMember || familyMembers.some((m) => m.id === id && m.userId === profile?.id)) {
       await refreshAll();
     } else {
-      const fm = await api.apiListFamilyMembers();
+      const [fm, n, mf] = await Promise.all([
+        api.apiListFamilyMembers(),
+        api.apiListNotifications(),
+        api.apiGetMemberFamilies(),
+      ]);
       setFamilyMembers(fm);
+      setNotifications(n);
+      setMemberFamilies(mf);
     }
   };
 

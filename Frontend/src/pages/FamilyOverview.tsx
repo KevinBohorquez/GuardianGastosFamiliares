@@ -12,8 +12,9 @@ import * as api from "@/lib/api";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line,
 } from "recharts";
-import { format, parseISO, startOfMonth } from "date-fns";
-import { es } from "date-fns/locale";
+import { startOfMonth } from "date-fns";
+import { safeParseDate, safeFormatDate } from "@/lib/utils";
+
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { Expense } from "@/types";
 
@@ -83,6 +84,7 @@ const FamilyOverview = () => {
   const [showMembers, setShowMembers] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [activeTab, setActiveTab] = useState<"family" | "personal">("family");
+  const [familyContext, setFamilyContext] = useState<"leader" | string>("leader");
   const [inviteResult, setInviteResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [inviting, setInviting] = useState(false);
 
@@ -99,7 +101,7 @@ const FamilyOverview = () => {
   const profileColorMap = Object.fromEntries(allProfiles.map(p => [p.id, p.color]));
 
   const monthStart = startOfMonth(new Date());
-  const monthly = expenses.filter(e => parseISO(e.date) >= monthStart);
+  const monthly = expenses.filter(e => safeParseDate(e.date) >= monthStart);
   const myMonthly = monthly.filter(e => e.userId === profile?.id);
 
   const totalIncome = isLeader ? allProfiles.reduce((s, p) => s + p.monthlyIncome, 0) : profile?.monthlyIncome || 0;
@@ -157,7 +159,7 @@ const FamilyOverview = () => {
   const byDay = (() => {
     const map = new Map<string, number>();
     expensesForView.forEach(e => { const d = e.date.slice(0, 10); map.set(d, (map.get(d) || 0) + e.amount); });
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date: format(parseISO(date), "d MMM", { locale: es }), amount }));
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date: safeFormatDate(date, "d MMM"), amount }));
   })();
 
   const byMember = isLeader ? allProfiles.map(p => {
@@ -259,15 +261,93 @@ const FamilyOverview = () => {
     );
   }
 
+  // ── Leader viewing another family as member (multi-tenant) ───────────
+  if (isLeader && familyContext !== "leader") {
+    const mf = memberFamilies.find((f) => f.id === familyContext);
+    if (mf) {
+      return (
+        <Layout>
+          <div className="mb-6 flex flex-wrap gap-2">
+            <button
+              onClick={() => setFamilyContext("leader")}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white"
+            >
+              {family?.family_name} (Líder)
+            </button>
+            {memberFamilies.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFamilyContext(f.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  familyContext === f.id ? "bg-white shadow-sm text-indigo-700 border border-indigo-200" : "text-gray-500 hover:text-gray-700 bg-gray-100"
+                }`}
+              >
+                {f.family_name} (Miembro)
+              </button>
+            ))}
+          </div>
+          <div className="glass rounded-2xl p-6 border border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center">
+                <Users className="w-6 h-6 text-indigo-600" />
+              </div>
+              <div>
+                <p className="font-bold text-gray-900 text-lg">{mf.family_name}</p>
+                <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">Miembro</span>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-200 hover:bg-red-50"
+              onClick={async () => {
+                if (!window.confirm(`¿Abandonar la familia "${mf.family_name}"?`)) return;
+                await rejectOrRemoveMember(mf.membershipId!);
+                setFamilyContext("leader");
+                await refreshAll();
+                toast.success("Saliste de la familia");
+              }}
+            >
+              Abandonar
+            </Button>
+          </div>
+        </Layout>
+      );
+    }
+  }
+
   // ── Leader view ──────────────────────────────────────────────────────
   return (
     <Layout>
+<<<<<<< HEAD
 =======
   // ── Leader view ──────────────────────────────────────────────────────
   return (
     <Layout>
 
 >>>>>>> Stashed changes
+=======
+      {memberFamilies.length > 0 && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          <button
+            onClick={() => setFamilyContext("leader")}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white shadow-sm"
+          >
+            {family.family_name} (Líder)
+          </button>
+          {memberFamilies.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFamilyContext(f.id)}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all"
+            >
+              {f.family_name} (Miembro)
+            </button>
+          ))}
+        </div>
+      )}
+
+>>>>>>> master
       {/* Header */}
       <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -413,7 +493,7 @@ const FamilyOverview = () => {
                       <p className="font-semibold text-gray-800 text-sm truncate">{e.description}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1.5">
                         <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0" style={{ background: ownerColor }}>{ownerName[0]?.toUpperCase()}</span>
-                        {ownerName} · {e.category} · {format(parseISO(e.date), "d MMM", { locale: es })}
+                        {ownerName} · {e.category} · {safeFormatDate(e.date, "d MMM")}
                       </p>
                     </div>
                     <p className="font-bold text-gray-900">{formatCurrency(e.amount)}</p>

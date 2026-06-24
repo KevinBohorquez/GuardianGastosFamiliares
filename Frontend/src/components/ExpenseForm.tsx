@@ -25,6 +25,8 @@ export const ExpenseForm = ({ open, onOpenChange, initial, onSubmit }: Props) =>
     const a = parseFloat(amount);
     if (!description.trim()) return toast.error("Descripción requerida");
     if (isNaN(a) || a <= 0) return toast.error("Monto inválido");
+    const today = new Date().toISOString().slice(0, 10);
+    if (date > today) return toast.error("No se permiten fechas futuras");
     onSubmit({ description: description.trim(), amount: a, date, category });
     if (!initial) { setDescription(""); setAmount(""); }
     onOpenChange(false);
@@ -46,7 +48,7 @@ export const ExpenseForm = ({ open, onOpenChange, initial, onSubmit }: Props) =>
             </div>
             <div className="space-y-2">
               <Label>Fecha</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <Input type="date" value={date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDate(e.target.value)} />
             </div>
           </div>
           <div className="space-y-2">

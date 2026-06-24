@@ -38,6 +38,7 @@ export interface Family {
   family_name: string;
   created_at: string;
   role: "leader" | "member";
+  membershipId?: string;
 }
 
 export interface FamilyMember {

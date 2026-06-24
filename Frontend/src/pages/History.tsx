@@ -9,9 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CATEGORIES, CATEGORY_COLORS, Category, Expense, formatCurrency } from "@/types";
 import { Pencil, Trash2, Filter, Download, Wallet } from "lucide-react";
 import { ExpenseForm } from "@/components/ExpenseForm";
+import { DeleteExpenseDialog } from "@/components/DeleteExpenseDialog";
 import { toast } from "sonner";
-import { format, parseISO } from "date-fns";
-import { es } from "date-fns/locale";
+import { safeParseDate, safeFormatDate } from "@/lib/utils";
+
 import * as api from "@/lib/api";
 
 type Scope = "individual" | "familiar";
@@ -27,6 +28,8 @@ const History = () => {
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
   const [editing, setEditing] = useState<Expense | null>(null);
+  const [deleting, setDeleting] = useState<Expense | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
@@ -71,7 +74,9 @@ const History = () => {
       }
     };
     fetchPage();
-  }, [currentPage, scope, memberFilter, categoryFilter, from, to, profile]);
+  }, [currentPage, scope, memberFilter, categoryFilter, from, to, profile, refreshKey]);
+
+  const bumpHistory = () => setRefreshKey((k) => k + 1);
 
   const exportCSV = async () => {
     setExporting(true);
@@ -86,24 +91,20 @@ const History = () => {
       const dataToExport = await api.apiExportExpenses(p);
 
       const rows = [
-        ["Fecha", "Miembro", "Categoría", "Descripción", "Monto (S/)"],
-        ...dataToExport.map((e) => {
-          const m = allFamilyProfiles.find((x) => x.id === e.userId);
-          return [
-            format(parseISO(e.date), "yyyy-MM-dd"),
-            m?.name || "—",
-            e.category,
-            `"${e.description.replace(/"/g, '""')}"`,
-            e.amount.toFixed(2),
-          ];
-        }),
+        ["fecha", "descripción", "categoría", "monto"],
+        ...dataToExport.map((e) => [
+          safeFormatDate(e.date, "yyyy-MM-dd"),
+          `"${e.description.replace(/"/g, '""')}"`,
+          e.category,
+          e.amount.toFixed(2),
+        ]),
       ];
       const csv = rows.map((r) => r.join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `historial_${scope}_${Date.now()}.csv`;
+      a.download = "gastos_guardian.csv";
       a.click();
       URL.revokeObjectURL(url);
       toast.success("CSV descargado", { id: toastId });
@@ -126,7 +127,7 @@ const History = () => {
           </h1>
         </div>
         <Button onClick={exportCSV} variant="outline" className="glass bg-white" disabled={exporting}>
-          <Download className="h-4 w-4 mr-2" /> {exporting ? "Exportando..." : "Exportar CSV"}
+          <Download className="h-4 w-4 mr-2" /> {exporting ? "Exportando..." : "Exportar datos (CSV)"}
         </Button>
       </div>
 
@@ -213,7 +214,7 @@ const History = () => {
       </div>
 
       {/* List */}
-      <div className="glass rounded-2xl p-4 md:p-6 relative min-h-[300px]">
+      <div className="glass rounded-2xl p-4 md:p-6 relative min-h-[300px]" data-testid="expense-history-table">
         {loadingHistory && (
           <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-sm rounded-2xl flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -247,7 +248,7 @@ const History = () => {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-800 truncate text-base">{e.description}</p>
                     <p className="text-xs font-medium text-gray-500 truncate mt-0.5">
-                      {m?.name || "—"} <span className="mx-1.5 opacity-50">•</span> {e.category} <span className="mx-1.5 opacity-50">•</span> {format(parseISO(e.date), "d MMM yyyy", { locale: es })}
+                      {m?.name || "—"} <span className="mx-1.5 opacity-50">•</span> {e.category} <span className="mx-1.5 opacity-50">•</span> {safeFormatDate(e.date, "d MMM yyyy")}
                     </p>
                   </div>
                   <p className="font-bold text-lg text-gray-900 tracking-tight whitespace-nowrap">{formatCurrency(e.amount)}</p>
@@ -261,7 +262,7 @@ const History = () => {
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => { deleteExpense(e.id); toast.success("Eliminado"); }}
+                        onClick={() => setDeleting(e)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -292,7 +293,28 @@ const History = () => {
         open={!!editing}
         onOpenChange={(o) => !o && setEditing(null)}
         initial={editing}
-        onSubmit={(d) => { if (editing) { updateExpense(editing.id, d); toast.success("Actualizado"); } }}
+        onSubmit={async (d) => {
+          if (editing) {
+            await updateExpense(editing.id, d);
+            toast.success("Actualizado");
+            setEditing(null);
+            bumpHistory();
+          }
+        }}
+      />
+
+      <DeleteExpenseDialog
+        open={!!deleting}
+        description={deleting?.description || ""}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        onConfirm={async () => {
+          if (deleting) {
+            await deleteExpense(deleting.id);
+            toast.success("Eliminado");
+            setDeleting(null);
+            bumpHistory();
+          }
+        }}
       />
     </Layout>
   );
