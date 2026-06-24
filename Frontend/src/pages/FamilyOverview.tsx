@@ -199,7 +199,6 @@ const FamilyOverview = () => {
     );
   }
 
-<<<<<<< Updated upstream
   // ── Solo miembro (no líder): vista de familias donde participa ────────
   if (!isLeader) {
     return (
@@ -319,35 +318,6 @@ const FamilyOverview = () => {
   // ── Leader view ──────────────────────────────────────────────────────
   return (
     <Layout>
-<<<<<<< HEAD
-=======
-  // ── Leader view ──────────────────────────────────────────────────────
-  return (
-    <Layout>
-
->>>>>>> Stashed changes
-=======
-      {memberFamilies.length > 0 && (
-        <div className="mb-6 flex flex-wrap gap-2">
-          <button
-            onClick={() => setFamilyContext("leader")}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white shadow-sm"
-          >
-            {family.family_name} (Líder)
-          </button>
-          {memberFamilies.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFamilyContext(f.id)}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-all"
-            >
-              {f.family_name} (Miembro)
-            </button>
-          ))}
-        </div>
-      )}
-
->>>>>>> master
       {/* Header */}
       <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

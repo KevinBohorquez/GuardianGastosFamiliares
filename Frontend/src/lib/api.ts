@@ -13,12 +13,6 @@ export const setToken = (t: string | null) => {
   else localStorage.removeItem(TOKEN_KEY);
 };
 
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-=======
-=======
->>>>>>> master
 export const setRefreshToken = (t: string | null) => {
   if (t) localStorage.setItem(REFRESH_TOKEN_KEY, t);
   else localStorage.removeItem(REFRESH_TOKEN_KEY);
@@ -70,13 +64,8 @@ async function tryRefreshToken(): Promise<boolean> {
 }
 
 // ── Request genérico con retry automático tras 401 ──────
-<<<<<<< HEAD
 // isAuthRoute: si es ruta de auth, no intentar refresh ni marcar sesión expirada
 async function request<T>(path: string, init: RequestInit = {}, _isRetry = false): Promise<T> {
->>>>>>> Stashed changes
-=======
-async function request<T>(path: string, init: RequestInit = {}, _isRetry = false): Promise<T> {
->>>>>>> master
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -85,18 +74,10 @@ async function request<T>(path: string, init: RequestInit = {}, _isRetry = false
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-=======
 
   // Si 401 y NO es ruta de auth y aún no es retry → intentar refrescar el token
   const isAuthRoute = path.startsWith("/api/auth/");
   if (res.status === 401 && !_isRetry && !isAuthRoute) {
-=======
-
-  // Si 401 y aún no es retry, intentar refrescar el token
-  if (res.status === 401 && !_isRetry) {
->>>>>>> master
     const refreshed = await tryRefreshToken();
     if (refreshed) {
       // Reintentar la misma petición con el nuevo token
@@ -107,10 +88,6 @@ async function request<T>(path: string, init: RequestInit = {}, _isRetry = false
     throw new Error("Sesión expirada. Por favor, inicia sesión nuevamente.");
   }
 
-<<<<<<< HEAD
->>>>>>> Stashed changes
-=======
->>>>>>> master
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
