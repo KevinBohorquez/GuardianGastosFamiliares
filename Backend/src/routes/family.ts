@@ -181,6 +181,32 @@ familyRouter.post("/invite", async (req: AuthedRequest, res) => {
 
 // PATCH /api/family/invite/:id/accept
 familyRouter.patch("/invite/:id/accept", async (req: AuthedRequest, res) => {
+<<<<<<< Updated upstream
+=======
+  const { data: invite } = await supabaseAdmin
+    .from("family_members")
+    .select("id, family_id, status")   // incluir family_id para el guard RNF-09
+    .eq("id", req.params.id)
+    .eq("user_id", req.user!.id)
+    .maybeSingle();
+
+  if (!invite) return res.status(404).json({ error: "Invitación no encontrada." });
+  if (invite.status === "accepted") return res.status(400).json({ error: "Esta invitación ya fue aceptada." });
+  if (invite.status !== "pending") return res.status(400).json({ error: "Esta invitación ya no está pendiente." });
+
+  // Guard RNF-09: el usuario no puede ser líder de la familia a la que lo invitan
+  const { data: isLeaderOfThisFamily } = await supabaseAdmin
+    .from("families")
+    .select("id")
+    .eq("id", (invite as any).family_id)
+    .eq("leader_id", req.user!.id)
+    .maybeSingle();
+
+  if (isLeaderOfThisFamily) {
+    return res.status(400).json({ error: "No puedes unirte como miembro a una familia de la que eres Líder." });
+  }
+
+>>>>>>> Stashed changes
   const { error } = await supabaseAdmin
     .from("family_members")
     .update({ status: "accepted" })

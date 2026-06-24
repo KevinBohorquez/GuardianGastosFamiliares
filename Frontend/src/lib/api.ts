@@ -9,7 +9,63 @@ export const setToken = (t: string | null) => {
   else localStorage.removeItem(TOKEN_KEY);
 };
 
+<<<<<<< Updated upstream
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+=======
+export const setRefreshToken = (t: string | null) => {
+  if (t) localStorage.setItem(REFRESH_TOKEN_KEY, t);
+  else localStorage.removeItem(REFRESH_TOKEN_KEY);
+};
+
+/** Limpia ambos tokens y dispara un evento para que AppContext redirija al login. */
+export const clearSession = () => {
+  setToken(null);
+  setRefreshToken(null);
+  window.dispatchEvent(new CustomEvent("auth:expired"));
+};
+
+// ── Refresh automático ──────────────────────────────────
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshToken(): Promise<boolean> {
+  // Deduplicar: si ya hay un refresh en curso, esperarlo
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const rt = getRefreshToken();
+    if (!rt) return false;
+
+    try {
+      const res = await fetch(`${BASE}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!res.ok) return false;
+
+      const data = await res.json();
+      if (data.accessToken && data.refreshToken) {
+        setToken(data.accessToken);
+        setRefreshToken(data.refreshToken);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+// ── Request genérico con retry automático tras 401 ──────
+// isAuthRoute: si es ruta de auth, no intentar refresh ni marcar sesión expirada
+async function request<T>(path: string, init: RequestInit = {}, _isRetry = false): Promise<T> {
+>>>>>>> Stashed changes
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -18,6 +74,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
+<<<<<<< Updated upstream
+=======
+
+  // Si 401 y NO es ruta de auth y aún no es retry → intentar refrescar el token
+  const isAuthRoute = path.startsWith("/api/auth/");
+  if (res.status === 401 && !_isRetry && !isAuthRoute) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      // Reintentar la misma petición con el nuevo token
+      return request<T>(path, init, true);
+    }
+    // No se pudo refrescar → sesión expirada
+    clearSession();
+    throw new Error("Sesión expirada. Por favor, inicia sesión nuevamente.");
+  }
+
+>>>>>>> Stashed changes
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
