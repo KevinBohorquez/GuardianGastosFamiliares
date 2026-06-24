@@ -13,8 +13,9 @@ import { toast } from "sonner";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
 } from "recharts";
-import { format, parseISO, startOfMonth } from "date-fns";
-import { es } from "date-fns/locale";
+import { startOfMonth } from "date-fns";
+import { safeParseDate, safeFormatDate } from "@/lib/utils";
+
 
 const Dashboard = () => {
   const { profile, expenses, updateProfile, addExpense, updateExpense, deleteExpense } = useApp();
@@ -42,7 +43,7 @@ const Dashboard = () => {
   const myExpenses = expenses
     .filter((e) => profile && e.userId === profile.id)
     .sort((a, b) => b.date.localeCompare(a.date));
-  const monthly = myExpenses.filter((e) => parseISO(e.date) >= monthStart);
+  const monthly = myExpenses.filter((e) => safeParseDate(e.date) >= monthStart);
   const totalMonth = monthly.reduce((s, e) => s + e.amount, 0);
   const balance = (profile?.monthlyIncome || 0) - totalMonth;
   const usagePct = profile?.monthlyIncome ? Math.min(100, (totalMonth / profile.monthlyIncome) * 100) : 0;
@@ -62,14 +63,14 @@ const Dashboard = () => {
     });
     return Array.from(map.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, amount]) => ({ date: format(parseISO(date), "d MMM", { locale: es }), amount }));
+      .map(([date, amount]) => ({ date: safeFormatDate(date, "d MMM"), amount }));
   }, [monthly]);
 
   const byWeekDay = useMemo(() => {
     const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
     const map = new Map<number, number>();
     monthly.forEach((e) => {
-      const dayIndex = parseISO(e.date).getDay();
+      const dayIndex = safeParseDate(e.date).getDay();
       map.set(dayIndex, (map.get(dayIndex) || 0) + e.amount);
     });
     return Array.from({ length: 7 }, (_, i) => ({
@@ -292,7 +293,7 @@ const Dashboard = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-800 truncate text-base">{e.description}</p>
-                  <p className="text-xs font-medium text-gray-500 mt-0.5">{e.category} <span className="mx-1.5 opacity-50">•</span> {format(parseISO(e.date), "d MMM yyyy", { locale: es })}</p>
+                  <p className="text-xs font-medium text-gray-500 mt-0.5">{e.category} <span className="mx-1.5 opacity-50">•</span> {safeFormatDate(e.date, "d MMM yyyy")}</p>
                 </div>
                 <p className="font-bold text-lg text-gray-900 tracking-tight">{formatCurrency(e.amount)}</p>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">

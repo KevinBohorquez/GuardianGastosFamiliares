@@ -11,8 +11,8 @@ import { Pencil, Trash2, Filter, Download, Wallet } from "lucide-react";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { DeleteExpenseDialog } from "@/components/DeleteExpenseDialog";
 import { toast } from "sonner";
-import { format, parseISO } from "date-fns";
-import { es } from "date-fns/locale";
+import { safeParseDate, safeFormatDate } from "@/lib/utils";
+
 import * as api from "@/lib/api";
 
 type Scope = "individual" | "familiar";
@@ -93,7 +93,7 @@ const History = () => {
       const rows = [
         ["fecha", "descripción", "categoría", "monto"],
         ...dataToExport.map((e) => [
-          format(parseISO(e.date), "yyyy-MM-dd"),
+          safeFormatDate(e.date, "yyyy-MM-dd"),
           `"${e.description.replace(/"/g, '""')}"`,
           e.category,
           e.amount.toFixed(2),
@@ -248,7 +248,7 @@ const History = () => {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-800 truncate text-base">{e.description}</p>
                     <p className="text-xs font-medium text-gray-500 truncate mt-0.5">
-                      {m?.name || "—"} <span className="mx-1.5 opacity-50">•</span> {e.category} <span className="mx-1.5 opacity-50">•</span> {format(parseISO(e.date), "d MMM yyyy", { locale: es })}
+                      {m?.name || "—"} <span className="mx-1.5 opacity-50">•</span> {e.category} <span className="mx-1.5 opacity-50">•</span> {safeFormatDate(e.date, "d MMM yyyy")}
                     </p>
                   </div>
                   <p className="font-bold text-lg text-gray-900 tracking-tight whitespace-nowrap">{formatCurrency(e.amount)}</p>

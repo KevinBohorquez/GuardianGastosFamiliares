@@ -12,8 +12,9 @@ import * as api from "@/lib/api";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, LineChart, Line,
 } from "recharts";
-import { format, parseISO, startOfMonth } from "date-fns";
-import { es } from "date-fns/locale";
+import { startOfMonth } from "date-fns";
+import { safeParseDate, safeFormatDate } from "@/lib/utils";
+
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { Expense } from "@/types";
 
@@ -100,7 +101,7 @@ const FamilyOverview = () => {
   const profileColorMap = Object.fromEntries(allProfiles.map(p => [p.id, p.color]));
 
   const monthStart = startOfMonth(new Date());
-  const monthly = expenses.filter(e => parseISO(e.date) >= monthStart);
+  const monthly = expenses.filter(e => safeParseDate(e.date) >= monthStart);
   const myMonthly = monthly.filter(e => e.userId === profile?.id);
 
   const totalIncome = isLeader ? allProfiles.reduce((s, p) => s + p.monthlyIncome, 0) : profile?.monthlyIncome || 0;
@@ -158,7 +159,7 @@ const FamilyOverview = () => {
   const byDay = (() => {
     const map = new Map<string, number>();
     expensesForView.forEach(e => { const d = e.date.slice(0, 10); map.set(d, (map.get(d) || 0) + e.amount); });
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date: format(parseISO(date), "d MMM", { locale: es }), amount }));
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date: safeFormatDate(date, "d MMM"), amount }));
   })();
 
   const byMember = isLeader ? allProfiles.map(p => {
@@ -482,7 +483,7 @@ const FamilyOverview = () => {
                       <p className="font-semibold text-gray-800 text-sm truncate">{e.description}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1.5">
                         <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0" style={{ background: ownerColor }}>{ownerName[0]?.toUpperCase()}</span>
-                        {ownerName} · {e.category} · {format(parseISO(e.date), "d MMM", { locale: es })}
+                        {ownerName} · {e.category} · {safeFormatDate(e.date, "d MMM")}
                       </p>
                     </div>
                     <p className="font-bold text-gray-900">{formatCurrency(e.amount)}</p>
